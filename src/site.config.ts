@@ -2,7 +2,7 @@ import type { SiteConfig } from "@/types";
 import type { AstroExpressiveCodeOptions } from "astro-expressive-code";
 
 export const siteConfig: SiteConfig = {
-	author: "Your Name",
+	author: "Ankur Kumar Agarwal",
 	date: {
 		locale: "en-US",
 		options: {
@@ -19,14 +19,14 @@ export const siteConfig: SiteConfig = {
 	title: "Astro Sienna",
 	hideThemeCredit: false,
 	profile: {
-		name: "John Doe",
-		email: "john@example.com",
-		github: "https://github.com/example",
-		linkedin: "https://www.linkedin.com/in/example/",
-		jobTitle: "Software Engineer",
-		employer: "Example Inc.",
-		employerUrl: "https://example.com",
-		alumni: "Example University",
+		name: "Ankur Kumar Agarwal",
+		email: "aggrawal_ankur@protonmail.com",
+		github: "https://github.com/aggrawal-ankur/",
+		linkedin: "https://www.linkedin.com/in/ankur-agarwal-a31895428/",
+		jobTitle: "",
+		employer: "",
+		employerUrl: "",
+		alumni: "",
 		avatar: "/avatar.png",
 	},
 	// Uncomment & fill in to enable Giscus comments on every post.

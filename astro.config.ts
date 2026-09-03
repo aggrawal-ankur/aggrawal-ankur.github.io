@@ -28,7 +28,7 @@ const BASE_PATH = process.env.BASE_PATH || "/";
 const START_URL = BASE_PATH.endsWith("/") ? BASE_PATH : `${BASE_PATH}/`;
 
 export default defineConfig({
-	site: "https://anjay-goel.github.io",
+	site: "https://aggrawal-ankur.github.io",
 	base: BASE_PATH,
 	image: {
 		domains: ["webmention.io"],
