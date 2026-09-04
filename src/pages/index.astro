@@ -48,6 +48,11 @@ const siteUrl = (path: string) => absoluteUrl(path, Astro.site);
 />
 
 <PageLayout meta={{ title: "Home", description: siteConfig.description }}>
+
+	<section class="welcome" aria-labelledby="welcome-label">
+		<div class="section-label" id="welcome-label">Welcome</div>
+	</section>	
+
 	<section class="hero">
 		<p>{siteConfig.description}</p>
 		<div class="socials">
