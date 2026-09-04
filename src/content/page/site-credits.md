@@ -20,7 +20,7 @@ You can check out their work here:
 
 > Anjay Goel
 > 
-> [GitHub ↗](https://github.com/AnjayGoel) · [LinkedIn ↗](https://www.linkedin.com/in/anjaygoel/) · [Personal Site ↗](https://anjay.sh/)
+> [GitHub ↗](https://github.com/anjay-goel/) · [LinkedIn ↗](https://www.linkedin.com/in/anjaygoel/) · [Personal Site ↗](https://anjay.sh/)
 
 
 > Ayush Soni 
