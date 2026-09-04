@@ -1,14 +1,15 @@
 ---
 title: About
-description: A short introduction. Replace this in src/content/page/about.md.
+description: "A description about me."
 ---
 
-This is the About page. It's a markdown file at `src/content/page/about.md` — edit it freely. The shape is intentionally unstructured so you can write a paragraph, a list, a CV, or whatever fits.
+Hi. My name is Ankur, and I like exploring things in depth. I explore things by asking questions until I have understood something well enough for what I am trying to do. I give each question substantial time, and I try to arrive at answers that I can understand and defend. The process is incredibly rewarding when I am finding answers, and deeply demoralizing when the questions pile up and there is no clear direction. I am still learning when and how to stop when I keep hitting walls.
 
-A few example bullets to get going:
 
-- 👋 One-line intro — what you do, where, since when.
-- 🛠 The tools you reach for first.
-- 📝 What you tend to write about here.
+My primary interests are low-level system software and examining my own thoughts. Getting stuck is a regular occurrence in my life, and two things that disturb me the most are human behaviour and how I learn. Most of the questions I ask tend to fall somewhere within these three areas.
 
-Find me on [GitHub](https://github.com/example), [LinkedIn](https://www.linkedin.com/in/example/), or by [email](mailto:john@example.com).
+This site is where I write down some of what I find along the way. I strongly believe that ideas in their raw form carry something that can get lost in the process of making them polished and presentable. At the same time, writing and editing helps me understand those ideas better and turn them into something I can share. What you read here, therefore, is not always the raw form in which I found or thought about something.
+
+English is not my strongest skill, but I am working on it.
+
+You can find me on [GitHub](https://github.com/aggrawal-ankur/), [LinkedIn](https://www.linkedin.com/in/ankur-agarwal-a31895428/), or by [email](mailto:aggrawal_ankur@protonmail.com).
