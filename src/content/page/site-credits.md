@@ -15,6 +15,8 @@ Below is a list of the changes made to this site, along with the commit where ea
 
 | # | Change | Commit | Author |
 | - | ------ | ------ | ------ |
+| 1 | A menu named "Site Credits" is added to the navbar to acknowledge the people behind this website. | [f03c9e2a](https://github.com/aggrawal-ankur/aggrawal-ankur.github.io/commit/f03c9e2a6d4c274d01c82d548fe0d23f86434acf) | Ankur |
+| 2 | A "WELCOME" is added in the Home page. | [65023f72](https://github.com/aggrawal-ankur/aggrawal-ankur.github.io/commit/65023f725aa9482fc106d2f24fc89fcd9ffd07a7) | Ankur |
 
 You can check out their work here:
 
