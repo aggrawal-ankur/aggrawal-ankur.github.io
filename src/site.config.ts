@@ -16,7 +16,7 @@ export const siteConfig: SiteConfig = {
 	lang: "en-US",
 	ogLocale: "en_US",
 	sortPostsByUpdatedDate: false,
-	title: "Astro Sienna",
+	title: "Ankur Agarwal",
 	hideThemeCredit: false,
 	profile: {
 		name: "Ankur Kumar Agarwal",
