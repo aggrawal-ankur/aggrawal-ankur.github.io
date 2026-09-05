@@ -12,4 +12,4 @@ This site is where I write down some of what I find along the way. I strongly be
 
 English is not my strongest skill, but I am working on it.
 
-You can find me on [GitHub](https://github.com/aggrawal-ankur/), [LinkedIn](https://www.linkedin.com/in/ankur-agarwal-a31895428/), or by [email](mailto:aggrawal_ankur@protonmail.com).
+Feel free to connect with me. You can see my work on [GitHub](https://github.com/aggrawal-ankur/), connect on [LinkedIn](https://www.linkedin.com/in/ankur-agarwal-a31895428/), or we can exchange thoughts in private using [email](mailto:aggrawal_ankur@protonmail.com).
