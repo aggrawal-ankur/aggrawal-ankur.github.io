@@ -6,37 +6,37 @@ Program storage can be divided into:
   2. **Static**: program-lifetime storage.
   3. **Heap**: for dynamic allocation.
 
-Any allocation that doesn't rely on malloc-family functions is either stack or static allocation. To understand them, we have to understand storage classes.
+To understand which program storage is in use for a variable, we have to understand storage classes.
 
 ---
 
 The C source we write either has storage classes enabled by default (extern and auto) or we define them ourselves (static and register).
 
-These storage classes influence the assembly.
-  - For an `extern`, the symbol is marked global.
+<!-- CONFUSED ABOUT THIS PART -->
+
+<!-- These storage classes influence the assembly.
+  - If `extern`, the symbol is marked global.
   - For an `auto`, a unique symbol is emitted, usually `.0` suffixed or a `.` prefixed symbol.
   - The symbol is left as is if `static` is used.
   - Register needs nothing.
 
-The assembly determines how the linker perceives a symbol.
-
-# Final Mental Model
-
-| Declared In | Default Storage Class | Explicit Storage Class | Storage Location | Lifetime | Accessibility |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Block | auto | | Stack | Block's lifetime | Within the block |
-| Block | | static | Static storage (.data/.bss) | Program's lifetime | Within the block |
-| File (Outside all blocks ) | extern | | Static storage (.data/.bss) | Program's lifetime | Entire program |
-| File (Outside all blocks ) | | static | Static storage (.data/.bss) | Program's lifetime | Instructions from that file in the final program |
+The assembly determines how the linker perceives a symbol. -->
 
 ---
 
-A block static identifier inherits the program's lifetime but the block's accessibility.
-
-A file static identifier inherits the program's lifetime but file-only accessibility.
+| Variable Scope | Storage Class | Storage Location | Lifetime | Accessibility |
+| :------------- | :------------ | :--------------- | :------- | :------------ |
+| Block | auto (default) | Stack | Block's lifetime | Within the block |
+| | static | Static storage (.data/.bss) | Program's lifetime | Within the block |
+| Global in the file | extern (default) | Static storage (.data/.bss) | Program's lifetime | Entire program |
+| | static | Static storage (.data/.bss) | Program's lifetime | Instructions from that TU in the final program |
 
 ---
 
-# Note
+**Note: Accessibility belongs to C. It doesn't apply to assembly.**
 
-The accessibility part belong to C grammar. This rule has no meaning for assembly.
+
+
+
+static with function? static inline
+extern inside a block?

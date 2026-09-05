@@ -8,20 +8,21 @@ C has the following general-purpose data types:
 | Derived   | array, pointer, function |
 | User-defined (Complex) | struct, union, enum, typedef |
 
-Note: `void` is only meaningful in functions and pointers.
+Is **complex** an actual term here?
 
-## How Much Do They Weigh?
+Note: `void` is only meaningful with functions and pointers.
 
-Some types have size which is architecture specific, while some have fixed size across all implementations.
+## Width
 
-| Data Type | Size   |
-| :-------- | :---   |
+| Data Type | Width (LP64 GNU/Linux) |
+| :-------- | :--------------------- |
 | char      | 1-byte |
 | int       | 4-byte |
 | float     | 4-byte |
 | double    | 8-byte |
-| array     | sizeof(data_type) * number_of_blocks |
-| pointer   | size of the address on an architecture, 8-byte here. |
+| void      | N/A    |
+| Array     | sizeof(type) * n_blocks |
+| Pointer   | 8-byte |
 
 `char` is generally 1-byte across all architectures and implementations while `int` is implementation depended. Although the common size of `int` is 4-bytes (on both 32-bit and 64-bit) but other definitions exist for fine-grained control in `inttypes.h`.
 
@@ -37,13 +38,13 @@ A group of 4 bytes means 32-bits together, which can represent a large sum of va
 
 To store 6 as a 32-bit integer, we have to pad the upper bits with zero. So, `00000110` becomes `00000000000000000000000000000110`.
 
-***
+---
 
 A variable of type int takes 4 bytes of space, but memory is byte addressable, which means, a continuous block of 4-bytes is required to store an integer and you have to group those 4-bytes together in order to interpret them right.
 
 Same with float and double.
 
-***
+---
 
 An array is a contiguous buffer of memory. You have a group of bytes that are distinct enough that they exist as individual units but they are a part of one single entity.
 
@@ -54,7 +55,7 @@ Take an array of 10 elements.
 
 Therefore, the size of an array is the size of the type of data it contains multiplied by the number of elements.
 
-***
+---
 
 So, what are data types?
 
