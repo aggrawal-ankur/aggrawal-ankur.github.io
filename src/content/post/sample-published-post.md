@@ -9,4 +9,8 @@ tags: [ c, compilers, systems ]
 
 This is a published post (`draft` is omitted or `draft: false`).
 
+> This is a blockquote demonstrating upright standard font text.
+> 
+> If we want *italics*, we can explicitly use markdown asterisks.
+
 This post will be built in both **dev mode** and **production mode**.
