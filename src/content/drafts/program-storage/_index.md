@@ -2,7 +2,7 @@
 
 Program storage can be divided into:
 
-  1. **Stack**: per-call storage.
+  1. **Stack**: per-function (call frame) storage.
   2. **Static**: program-lifetime storage.
   3. **Heap**: for dynamic allocation.
 
@@ -19,19 +19,57 @@ There are 4 things associated with a variable.
 
 All variables in C have a storage class. Sometimes it is visible, other times it is not. A storage class gives a compiler the 4 pieces of information associated with a variable. [NEEDS IMP.]
 
-<!-- CONFUSED ABOUT THIS PART -->
-
-<!-- These storage classes influence the assembly.
-  - If `extern`, the symbol is marked global.
-  - For an `auto`, a unique symbol is emitted, usually `.0` suffixed or a `.` prefixed symbol.
-  - The symbol is left as is if `static` is used.
-  - Register needs nothing.
-
-The assembly determines how the linker perceives a symbol. -->
+There are 4 storage classes: auto, resigner, static and extern.
 
 ---
 
-There are 4 storage classes.
+Scope defines where a variable can be referenced or accessed. There are 3 scopes.
+  1. Block scope
+  2. File scope
+  3. Program scope
+
+## Block Scope
+
+All variables inside a pair of curly-braces are block scoped. Example: functions, if-else and loops.
+
+The default storage class for block scoped declarations is `auto`, which means the variable goes on stack. It is implicit, which is why no one specifies it.
+
+As long as the block exist, the variables exist. When the block terminates, the variables cease to exist, which is why they can not be referenced outside of the block.
+
+## File Scope and Program Scope
+
+A variable which is globally accessible within one translation unit is a file scoped declaration.
+
+A variable which is accessible throughout the whole program is a program scoped declaration.
+
+By default, a variable declared outside of any function is a program scoped declaration. However, if we use `static`, the declaration becomes file scoped.
+
+In the example below, pie1 is a program scoped variable and pie2 is a file scoped variable.
+```c
+/* hello.c */
+#include <stdio.h>
+
+float pie1 = 3.14;
+static float pie2 = 3.14;
+
+int main(void);
+```
+
+## Assembly Context
+
+Block scoped declarations are a part of C only. The compiler enforces block scope accessibility. Once we are in assembly, we can easily access those variables.
+
+Assembly doesn't have scopes. It has linkage.
+
+**If I use one identifier across multiple translation units, do they refer to the same object, or different ones?** This is answered by linkage.
+
+There are two types of linkages: external and internal.
+  - With external linkage, an identifier refers to the same object throughout the program (across all the TUs).
+  - Within one translation unit, each declaration of an identifier with internal linkage refers to the same object and it is visible within that TU only.
+
+A variable with `extern` storage class has external linkage (STB_GLOBAL). A variable with `static` storage class has internal linkage (STB_LOCAL), doesn't matter where it is declared in the file.
+
+---
 
 | Storage Class | Scope | Lifetime | Default Value (when uninitialized) | Storage Location |
 | :------------ | :---- | :------- | :--------------------------------- | :--------------- |
@@ -42,11 +80,6 @@ There are 4 storage classes.
 
 ---
 
-1. A variable declared inside a block by default has the `auto` storage class. This variable goes on stack, inherits garbage value from the stack, is accessible by the instructions in that block and dies when the block terminates. If `static` is used with this variable, it's lifetime is increased to program scope, it has a default value if uninitialized, but it remains accessible within the block only.
-
-2. A variable declared at file scope (no blocks) by default has the `extern` storage class. The variable goes on static storage, has program's lifetime and is accessible by the whole program. If `static` is used with this variable, it's accessibility is reduced to the TU it is defined in.
-
-**Note: Accessibility belongs to C. It doesn't apply to assembly.**
 
 
 
@@ -54,3 +87,16 @@ There are 4 storage classes.
 how static (.data/.bss) variables are created in assembly.
 static with function? static inline
 extern inside a block?
+
+
+
+
+<!-- CONFUSED ABOUT THIS PART -->
+
+<!-- These storage classes influence the assembly.
+  - If `extern`, the symbol is marked global.
+  - For an `auto`, a unique symbol is emitted, usually `.0` suffixed or a `.` prefixed symbol.
+  - The symbol is left as is if `static` is used.
+  - Register needs nothing.
+
+The assembly determines how the linker perceives a symbol. -->

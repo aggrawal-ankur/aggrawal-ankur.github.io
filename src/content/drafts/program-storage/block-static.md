@@ -1,23 +1,16 @@
 # Block Static
 
-***A block static identifier inherits the program's lifetime but is only accessible by the instructions written in the block it is define in. Basically, a private global.***
+A **block static** identifier inherits the program's lifetime but is only accessible by the instructions written in the block it is defined in. Basically, a **private global**.
 
-Take this:
-```c
-#include <stdio.h>
-
-int main(void){
-  static int var1 = 5;
-
-  if (var1 != 0){
-    int var2 = 10;
-  }
-}
+For compiling C to x64 intel assembly, we will use this command:
+```bash
+$ gcc test.c -S -o main.s -masm=intel -fno-ident -fno-asynchronous-unwind-tables -fno-dwarf2-cfi-asm
 ```
 
 Let's analyze block statics.
 
-Take this example:
+## Example #1: Uninitialized block statics.
+
 ```c
 #include <stdio.h>
 
@@ -25,42 +18,58 @@ int main(void){
   static int num;
 }
 ```
-`num` is a block static and since it is uninitialized, we expect it inside `.bss`.
 
 This is the assembly:
 ```nasm
-.local num.0
-.comm  num.0,4,4
+main:
+	push rbp
+	mov  rbp, rsp
+	mov  eax, 0
+	pop  rbp
+	ret
+
+	.local num.0
+	.comm  num.0, 4, 4
 ```
-Indeed.
 
----
+Because `num` is an uninitialized block static variable, we expect it to be in `.bss`.
 
-After initializing it, we expect it in `.data` now.
+`.local` is is used to create a local symbol with STB_GLOBAL linkage and `.comm` is used to allocate storage in the .bss section (.comm  sym, size, align).
+
+## Example #2: Initialized Block Statics
+
 ```c
 #include <stdio.h>
 
 int main(void){
-  static int num = 45;
+	static int num = 45;
 }
 ```
 
 This is the assembly:
 ```nasm
+main:
+	push rbp
+	mov  rbp, rsp
+	mov  eax, 0
+	pop  rbp
+	ret
+
 	.data
 	.align 4
-	.type	num.0, @object
-	.size	num.0, 4
+	.type  num.0, @object
+	.size  num.0, 4
 num.0:
 	.long	45
 ```
-Indeed.
+
+As expected, num.0 is in `.data` now.
 
 ---
 
 Let's understand how the lifetime is increased but the scope remains block level.
 
-***The reality is, there is no such "program lifespan but block scope". It's an illusion which can be broken very easily.***
+***The reality is, there is no such thing as "program lifespan but block scope". It's an illusion which we can break very easily.***
 
 Scopes are a part of the C's language grammar. They are enforced during compilation. If you get your hands on assembly, you can access the variable which you couldn't previously.
 
@@ -94,9 +103,9 @@ int main(){
 
 The sq() declares `ncalls`, a block scope static variable, which keeps the count of calls made to the sq().
 
-As `ncalls` is a private global, not depended on the stack, its state is retained across function calls, that's why the last `printf` prints 4.
+`ncalls` is a private global whose state is not depended on the stack, so it is retained across function calls, that's why the last `printf` prints 4.
 
-The lifetime of `ncalls` is increased but the scope remains the same.
+The lifetime of `ncalls` is increased but the accessibility remained the same.
 
 This is the assembly.
 ```nasm
