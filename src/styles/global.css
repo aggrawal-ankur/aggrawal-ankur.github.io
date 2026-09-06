@@ -335,6 +335,14 @@ ul.work-list .badge {
 	border-radius: 2px;
 	margin-left: auto;
 }
+ul.work-list .timeline-range {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	color: hsl(var(--theme-text) / 0.62);
+	margin: 2px 0 6px;
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+}
 ul.work-list p {
 	font-size: 16px;
 	color: hsl(var(--theme-text-muted));
