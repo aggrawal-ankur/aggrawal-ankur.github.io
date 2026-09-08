@@ -13,8 +13,17 @@ export interface ShowcaseItem {
  * e.g., "August 10, 2026 - September 05, 2026 (27 days)"
  */
 export function formatShowcaseTimeline(start: string | Date, end: string | Date): string {
-	const startDate = new Date(start);
-	const endDate = new Date(end);
+	const parseDate = (d: string | Date) => {
+		if (d instanceof Date) return d;
+		const parts = d.split("-").map(Number);
+		if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+			return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+		}
+		return new Date(d);
+	};
+
+	const startDate = parseDate(start);
+	const endDate = parseDate(end);
 
 	const formatter = new Intl.DateTimeFormat("en-US", {
 		month: "long",
