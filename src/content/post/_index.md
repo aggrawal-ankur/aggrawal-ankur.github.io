@@ -1,8 +1,8 @@
 ---
-title: "Title"
-publishDate: 2026-09-09
-description: "Description"
-draft: true
+title: "A Deeper Look at Variables in C"
+publishDate: "2026-09-10"
+# updatedDate: "2026-09-10"
+description: "An exploration of C variables through scope, storage duration, linkage, initialization, and their representation in assembly and ELF."
 tags: [ c-to-asm ]
 ---
 
@@ -11,6 +11,14 @@ tags: [ c-to-asm ]
 ***This writing is based on the ISO/IEC 9889:2024 (C23) draft. It uses intuitive definitions to understand this topic.***
 
 ***This is a complex topic with edge cases. If you think that a fact is inaccurately represented, or the writing doesn't uphold the standards it is claiming, the author warmly welcomes all the suggestions and corrections. The communication can be done via Email, LinkedIn, or GitHub Discussions.***
+
+## Expectations
+
+This is an exploration of C variables, not a complete reference. It focuses on understanding a few of their properties in greater depth and seeing how those properties are reflected in compiler output and object files.
+
+The examples use GCC, x86-64, and ELF. Some observations therefore describe how one particular toolchain implements C, rather than requirements imposed by the C standard.
+
+The goal is not to cover every rule or edge case concerning C variables, but to develop a deeper understanding of the parts discussed here.
 
 ---
 
@@ -28,7 +36,7 @@ There are several properties associated with C variables that I want to track an
 3. **Storage Duration:** *How long the storage associated with an identifier should exist in memory?*
    1. Until the program execution is in the block the identifier is declared in?
    2. Until the program executes?
-   3. Should it correspond one-to-one with the scope, or be an independent property?
+   3. Should it correspond one-to-one with scope, or should it be an independent property?
 
 4. **Initial State:** *What is the initial value of the object if no initializer is provided?*
 
@@ -42,10 +50,10 @@ Below is a description of these storage class specifiers.
 
 | Storage Class Specifier | Scope (Availability) | Storage Location | Storage Duration | Linkage | Value if no initializer is provided |
 | :---------------------- | :------------------- | :--------------- | :--------------- | :------ | :---------------------------------- |
-| `auto` | Block scope | Automatic storage. More on this later. | As long as the execution is in the block the variable is defined in. | None | Indeterminate |
-| `register`  | Block Scope | Automatic storage | Automatic | None | Indeterminate |
-| `static` | *Block scope* when used with an identifier present in a block; *File scope* when used with an identifier present globally in the file. | Static storage, typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | *None* for block-static and *Internal* for file-static identifiers. | 0 |
-| `extern` | N/A | Static storage, typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | External | N/A |
+| `auto` | Block scope | Automatic storage. More on this later. | Until execution is in the block the variable is defined in. | None | Indeterminate |
+| `register` | Block Scope | Automatic storage | Automatic | None | Indeterminate |
+| `static` | *Block scope* when the identifier is present in a block; *File scope* when the identifier is present globally in the file. | Static storage. Typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | *None* for block-static and *Internal* for file-static identifiers. | 0 |
+| `extern` | N/A | Static storage. Typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | External | N/A |
 
 ## Notes
 
@@ -56,15 +64,17 @@ Below is a description of these storage class specifiers.
 
 The table is loaded with information. To understand it, we need a starting point.
 
-A bare minimum declaration contains an identifier and its type. We can deduce where it is declared in by noticing the surrounding code. It doesn't advertise the aforementioned properties. Therefore, the location of the declaration is the right starting point.
+A bare minimum declaration contains an identifier and its type. It doesn't advertise the aforementioned properties. However, we can find where it is declared by noticing the surrounding code. We will treat the location of a declaration as our starting point.
 
 ## Block-level declaration
 
 An identifier declared inside a pair of curly-braces (functions, if-else, loops, and unnamed blocks, among others) has block scope.
 
-The default storage class for block-scoped declarations is `auto`, which stands for "automatic storage". Usually it is stack, but it could be a register or completely optimized away by the compiler. The actual storage location depends on multiple things. In my observation, I have found two factors influencing it. They are **program complexity** and **optimization level**.
+The default storage class for block-scoped declarations is `auto`, which stands for "automatic storage". Usually it is stack, but it could be a register or it could be completely optimized by the compiler.
+
+The actual storage location depends on multiple things. In my observation, I have found two factors influencing it. They are **program complexity** and **optimization level**.
   - Program complexity directly affects the register pressure. A complicated program with multiple live values might force the compiler to use stack, as keeping values live in registers increases "register pressure".
-  - If the code is simple enough, the compiler might use registers instead of stack at higher optimization levels (-O1 and beyond).
+  - If the code is simple enough, the compiler might use registers instead of stack at higher optimization levels (--O1 and beyond).
 
 `auto` is implicit, which is why no one specifies it. So, `{auto int x = 45;}` and `{int x = 45;}` are identical.
 
@@ -72,7 +82,7 @@ The default behavior can be overridden with `static`. It increases the storage d
 
 ---
 
-Therefore, identifiers declared in a block are available only within it. Their storage duration, however, depends on their storage class.
+Therefore, identifiers declared in a block are available only in its boundaries. Their storage duration, however, depends on their storage class.
 
 It is reasonable to think that the storage associated with an automatic block-scoped object is discarded once execution leaves the block. It is not wrong, but it is incomplete. We will explore it from assembly's point of view to complete it.
 
@@ -94,10 +104,9 @@ As named, a file-scoped declaration is available within its translation unit onl
 ---
 
 In the example above, `pi_1` is globally available and `pi_2` is local to its translation unit. Before going into the details, take this scenario.
-  - We have a file named `math2.c`. It wants to use `pi_1` declared in `math1.c`.
-  - How should `math2.c` communicate to the toolchain (gcc/clang) that it wants to use a variable defined in a different TU? The answer is `extern`.
+  - We have a file named `math2.c`. It wants to use `pi_1` which is defined in `math1.c`.
+  - How should `math2.c` communicate to the toolchain (gcc/clang) that it wants to use a variable defined in a different TU? The answer is `extern`. The snippet below demonstrates this.
 
-This is how `math2.c` will convey the toolchain.
 ```c
 /* math2.c */
 #include <stdio.h>
@@ -108,51 +117,27 @@ int main(void){
   printf("%f\n", pi_1);
 }
 ```
-  - The extern specifier tells the toolchain that this declaration refers to an object with external linkage, whose definition is provided elsewhere. This is made clear in the examples section.
+
+The `extern` specifier tells the toolchain that this declaration refers to an object with external linkage, whose definition is provided elsewhere. This is made clear later in the examples section.
 
 If you notice, a block-scoped object is available and accessible within its block; a file-static object is available and accessible within the TU. *While an object with external linkage is available across all the TUs, it is not accessible by default.*
 
-Apart from this, extern has another use case. Take this example:
-```c
-#include <stdio.h>
-
-int num = 10;
-
-int main(void){
-  int num = 20;
-  printf("%d\n", num);
-}
-```
-  - The answer is 20.
-
-What if I want to access the file-scoped one? Just remove the local one. But we can do one more thing.
-```c
-#include <stdio.h>
-
-int num = 10;
-
-int main(void){
-  extern int num;
-  printf("%d\n", num);
-}
-```
-
-That's why the `extern` storage class specifier feels slightly awkward. It is not similar to other storage classes.
+That's why `extern` feels slightly awkward. It is not similar to other storage class specifiers.
 
 ---
 
-It's time to explore the perspective of assembly. It is necessary as C is converted to assembly and both languages have different models to express the same intent. Exploring assembly will complete our mental model.
+It's time to explore the perspective of assembly. It is necessary as C is compiled to assembly and both the languages have different models to express the same intent. Exploring assembly will complete our mental model.
 
 ## Assembly Context
 
-Assembly doesn't have scopes the way C has. It has symbols and those symbols have a few properties including **visibility** and **cross-file name resolution** when the linker operates on the object files generated from these assembly units. These are the properties that interest us.
+Assembly doesn't have scopes the way C has. It has symbols and those symbols have a few properties. The ones that interest us includes **visibility** and **cross-file name resolution**, which is used by the linker to perform relocations.
 
 To understand these properties, we have to understand **linkage**.
 
-**If I use one identifier across multiple translation units, do they refer to the same object, or different ones?** This is what linkage answers.
+***If I use one identifier across multiple translation units, do they refer to the same object, or different ones?*** This is what linkage answers.
 
 There are three types of linkage: external, internal, and none.
-  - With external linkage (STB_GLOBAL), an identifier refers to the same object throughout the program (across all the TUs).
+  - With external linkage (STB_GLOBAL), an identifier refers to the same object across all the TUs constituting the program.
   - At file scope, a declaration of an identifier with the `static` specifier has internal linkage. It refers to the same object throughout the translation unit and that identifier is visible within that TU only.
   - Automatic variables have no linkage. **The why is unclear to me at this moment.** It may be due to the fact that they cease to exist after the stack frame associated with them is released, so there is no point of assigning a linkage to them as they are transient given to the program's lifespan.
 
@@ -162,20 +147,19 @@ Therefore, from the perspective of assembly, either a symbol is available to the
 
 ---
 
-We can also notice that there is no true block scope in assembly. Then how the compiler translates automatic storage and block-level availability of C objects?
-  - We use a toolchain like GCC or Clang to build a C source code.
-  - A toolchain controls all the steps in the build process. They generate an assembly which conforms to the C language rules.
-  - Since the process is controlled end-to-end, there is no way an instruction is emitted that accesses a block-scoped declaration outside of the equivalent assembly code, unless the toolchain has a bug.
+We can notice that there is no block scope in assembly. Then how the compiler translates automatic storage and block-level availability of C objects?
+  - We use a toolchain like GCC or Clang to build a C source code. It controls all the steps in the build process. It generates an assembly which conforms to the C language rules.
+  - The process is controlled end-to-end, so there is no way an instruction is emitted that accesses a block-scoped declaration outside of the equivalent assembly code, unless the toolchain has a bug.
 
-Does that mean
+Does that mean.....
   - I can stop gcc/clang after compilation (or invoke the preprocessor and compiler manually and stop there),
   - check if stack is used to store a block-scoped variable,
   - if yes, then manipulate the assembly to access it outside its block while ensuring that the storage corresponding to the variable still exists and has not been reused, and
   - expect it to run the intended way?
 
-Absolutely. If the conditions were right, the program is likely to execute the intended way.
+Absolutely. If the conditions were right, the program is likely to execute the intended way. Example #8 demonstrated this.
 
-Isn't this problematic? It is. But as said, the toolchain controls all the steps. As long as it is not buggy, it should not be a problem. Moreover, if we write assembly manually, we are likely to exhibit similar behavior, as accessing a variable outside of its intended scope could be problematic.
+Isn't this problematic? It is. But as said, the toolchain controls all the steps. As long as it is not buggy, it should be alright. Moreover, if we write assembly manually, we are likely to exhibit similar behavior, as accessing a variable outside of its intended scope is problematic in general.
 
 ---
 
@@ -183,12 +167,12 @@ From the perspective of C, it is reasonable to assume that leaving a block ends 
 
 In ordinary functions without dynamic stack allocation (VLA), the compiler often reserves the space required by every declaration in the function at once. This includes the storage needed by nested blocks as well.
 
-The compiler normally doesn't emit a separate stack adjustment when a nested block ends. The compiler adjusts the stack once-for-all (release) when the function returns. **Please note that this is an observed behavior.**
+The compiler normally doesn't emit a separate stack adjustment when a nested block ends. The compiler adjusts (release) the stack once-for-all when the function returns. **Please note that this is an observed behavior.**
 
 Just like a programmer writing assembly manually ensures that symbols are used within the intended blocks of code, even when there is no such rule, the programmer can adjust the stack pointer to conceptually represent creation/termination of C-style blocks.
 
-It is reasonable to ask why the compiler doesn't do what a programmer can do manually. **I don't have an answer here.** Maybe the engineers who build these compilers, or the researchers in this field can answer it better. However, we can notice that performance can be a decent contributor in this choice.
-  - Adjusting the stack pointer may not be an expensive operation, but when done repeatedly may induce unintended effects on the performance.
+It is reasonable to ask why the compiler doesn't do what a programmer can do manually. **I don't have an answer here.** Maybe the engineers who build these compilers, or the researchers in this field can answer it better. However, performance could be one of the factors influencing this.
+  - Adjusting the stack pointer may not be an expensive operation, but when done repeatedly may introduce unintended effects on the performance.
   - To adjust rsp after each block, the compiler has to keep track of the total allocation size in every block.
   - Dynamic stack allocation, or VLAs, further complicates this.
 
@@ -200,10 +184,12 @@ To solidify our understanding, here are a few examples.
 
 To compile C to x86-64 assembly, we will use GCC with the following flags.
 ```bash
-$ gcc main.c -S -o main.s -masm=intel -fno-ident -fno-asynchronous-unwind-tables -fno-dwarf2-cfi-asm
+$ gcc main.c -S -o main.s \ 
+   -masm=intel -fno-ident \
+   -fno-asynchronous-unwind-tables -fno-dwarf2-cfi-asm
 ```
 
-The flags are used to generate a clean assembly:
+They are used to generate a clean assembly:
   - `-masm=intel` instructs GCC to generate intel syntax assembly, although the directives remain GAS (GNU as) specific.
   - `-fno-ident` disables the generation of .ident assembler directives.
   - `-fno-asynchronous-unwind-tables` disables the generation of the .eh_frame section in the binary.
@@ -214,9 +200,12 @@ The flags are used to generate a clean assembly:
 ### #1. Automatic Storage
 
 **Expectations**:
-	- At -O0, the compiler preserves the exact program semantics. Often times, stack is used here. But it is an observed behavior.
-	- At -O1, the compiler looks for optimizations. If the logic is simple enough, it may promote certain memory-based accesses to register.
+
+- At -O0, the compiler aims to preserve the exact program semantics. Often times, stack is used here. But it is an observed behavior.
+
+- At -O1, the compiler looks for optimizations. If the logic is simple enough, it may promote certain memory-based accesses to register.
 **
+
 ```c
 #include <stdio.h>
 
@@ -227,15 +216,15 @@ int main(void){
 ```
 
 Assembly at -O0:
-```nasm
+```asm
 	.text
-	.section	.rodata
+	.section .rodata
 .LC0:
-	.string	"num %d\n"
+	.string	 "num %d\n"
 
 	.text
-	.globl	main
-	.type	main, @function
+	.globl main
+	.type	 main, @function
 main:
 	push rbp
 	mov  rbp, rsp
@@ -256,31 +245,31 @@ main:
   - Stack is used.
 
 Assembly at -O1:
-```nasm
+```asm
 	.text
-	.section	.rodata.str1.1,"aMS",@progbits,1
+	.section .rodata.str1.1, "aMS", @progbits, 1
 .LC0:
-	.string	"num %d\n"
+	.string  "num %d\n"
 
 	.text
-	.globl	main
-	.type	main, @function
+	.globl main
+	.type	 main, @function
 main:
-	sub	rsp, 8
-	mov	esi, 4            ; arg3
-	lea	rdi, .LC0[rip]    ; arg2
-	mov	eax, 0            ; arg1
-	call	printf@PLT
+	sub  rsp, 8
+	mov  esi, 4            ; arg3
+	lea  rdi, .LC0[rip]    ; arg2
+	mov  eax, 0            ; arg1
+	call printf@PLT
 
 	mov	eax, 0
 	add	rsp, 8
 	ret
 ```
-  - Register is used.
+  - A register is used.
 
 ### #2. Register
 
-**Expectation**: We can not use the "address of" operator on a variable with the register storage class, doesn't matter if it got storage on stack or a register.
+**Expectation**: We can not use the "address of" operator on a variable with the register storage class, doesn't matter if it got stored on stack or a register.
 ```c
 #include <stdio.h>
 
@@ -300,7 +289,7 @@ test.c:5:3: error: address of register variable ‘num’ requested
 
 ### #3. Uninitialized block statics.
 
-**Expectation**: `num` will be given storage in the .bss section and initialized to zero.
+**Expectation**: `num` will be given storage in the `.bss` section and it will be initialized to zero.
 ```c
 #include <stdio.h>
 
@@ -311,29 +300,29 @@ int main(void){
 ```
 
 Generated assembly:
-```nasm
+```asm
 	.text
-	.section  .rodata
+	.section .rodata
 	.align 8
 .LC0:
-	.string	"num (without an initializer): %d\n"
+	.string	 "num (without an initializer): %d\n"
 
 	.text
 	.globl main
-	.type	 main, @function
+	.type  main, @function
 main:
 	push rbp
 	mov  rbp, rsp
 
-	mov eax, DWORD PTR num.0[rip]
-	mov esi, eax          ; arg3
-	lea	rax, .LC0[rip]
-	mov	rdi, rax          ; arg2
-	mov	eax, 0            ; arg1
-	call	printf@PLT
+	mov  eax, DWORD PTR num.0[rip]
+	mov  esi, eax          ; arg3
+	lea  rax, .LC0[rip]
+	mov  rdi, rax          ; arg2
+	mov  eax, 0            ; arg1
+	call printf@PLT
 
-	mov  eax, 0
-	pop  rbp
+	mov eax, 0
+	pop rbp
 	ret
 
 	.local num.0
@@ -349,9 +338,19 @@ Explanation of the directives:
   - `.local` is GAS directive used to create a symbol local to the assembly unit with the following syntax: `.local sym_name`
   - `.comm` reserves uninitialized common storage for a symbol with the following syntax: `.comm buffer, size_bytes, alignment`
 
-Questions.
-	1. Why there is no `.section .bss`? The compiler has multiple ways to reserve memory in `.bss`. The compiler might prefer one over the other given the priorities. Discussing this is out-of-scope of this writing.
-	2. Why `num` is changed to `num.0`? It prevents "duplicate symbol error" when variables with identical names in different blocks are given static storage. For example, both `foo()` and `bar()` declaring a `static int count;`. Again, discussing that is out-of-scope of this writing.
+~~ ***Questions*** ~~
+
+Why there is no `.section .bss`?
+
+- The compiler has multiple ways to reserve memory in `.bss`.
+
+- The compiler might prefer one over the other given the priorities. Discussing this is out-of-scope of this writing.
+
+Why `num` is changed to `num.0`?
+
+- It prevents duplicate symbol error when variables with identical names in different blocks are given static storage. 
+
+- For example, both `foo()` and `bar()` declaring a `static int count;`. Again, discussing that is out-of-scope of this writing.
 
 ### #4. Initialized Block Statics
 
@@ -365,7 +364,7 @@ int main(void){
 ```
 
 This is the assembly:
-```nasm
+```asm
 main:
 	push rbp
 	mov  rbp, rsp
@@ -403,10 +402,9 @@ int main(void){
   static int num = 0;
 }
 ```
-  - The assembly output is identical except for the filename. Use `diff` to double check.
 
 This is the assembly:
-```nasm
+```asm
 main:
 	push rbp
 	mov  rbp, rsp
@@ -417,13 +415,15 @@ main:
 	.local num.0
 	.comm  num.0, 4, 4
 ```
+  - The assembly output is identical except for the filename. Use `diff` to double check.
 
 ### #6. Symbol Visibility
 
 **Expectations**:
-	- num1: Global
-	- num2: Local
-	- num3: No visibility
+
+- num1: Global
+- num2: Local
+- num3: None
 
 ```c
 #include <stdio.h>
@@ -437,7 +437,7 @@ int main(void){
 }
 ```
 
-Use `readelf` to inspect symbol information in the generated binary.
+Use `readelf` to inspect symbol information in the generated binary. ***Note that it requires binutils on your system.***
 ```bash
 → readelf main -s | grep num 
    Num:    Value          Size Type    Bind   Vis      Ndx Name
@@ -476,6 +476,144 @@ The output:
 → ./main
 50
 ```
+
+## #8. Modify the assembly to access a block-scoped declaration outside of it.
+
+The following code calls the square function 4 times. The function has a variables that stores the number of calls made to the function. The function neither prints ncalls nor returns it. There is no way we can access it in C.
+```c
+#include <stdio.h>
+
+void sq(int n){
+  static int ncalls = 0;
+  ncalls++ ;
+
+  printf("The square of %d is %d\n", n, n*n);
+}
+
+int main(){
+  sq(4);
+  sq(5);
+  sq(6);
+  sq(7);
+  printf("Number of calls made to sq() are \n");
+
+  return 0;
+}
+```
+
+This is the generated assembly.
+```asm
+	.file	"test.c"
+	.intel_syntax noprefix
+	.text
+	.section .rodata
+.LC0:
+	.string	 "The square of %d is %d\n"
+
+	.text
+	.globl sq
+	.type	 sq, @function
+sq:
+	push rbp
+	mov  rbp, rsp
+	sub  rsp, 16
+	mov	DWORD PTR -4[rbp], edi
+
+	mov	eax, DWORD PTR ncalls.0[rip]    # ncalls
+	add	eax, 1                          # compute ncalls++
+	mov	DWORD PTR ncalls.0[rip], eax    # update ncalls
+
+	mov  eax, DWORD PTR -4[rbp]    # n
+	imul eax, eax    # n*n
+	mov  edx, eax    # arg4
+
+	mov  eax, DWORD PTR -4[rbp]
+	mov  esi, eax      # arg3 (n)
+
+	lea  rax, .LC0[rip]
+	mov  rdi, rax      # arg2 (string)
+
+	mov  eax, 0        # arg1
+	call printf@PLT
+
+	nop
+	leave
+	ret
+
+	.section .rodata
+	.align 8
+.LC1:
+	.string	 "Number of calls made to sq() are \n"
+
+	.text
+	.globl main
+	.type	 main, @function
+main:
+	push rbp
+	mov  rbp, rsp
+
+	mov  edi, 4
+	call sq
+
+	mov  edi, 5
+	call sq
+
+	mov  edi, 6
+	call sq
+
+	mov  edi, 7
+	call sq
+
+	lea  rax, .LC1[rip]
+	mov  rdi, rax
+	mov  eax, 0
+	call printf@PLT
+
+	mov	eax, 0
+	pop	rbp
+	ret
+
+	.local ncalls.0
+	.comm  ncalls.0,4,4
+
+```
+
+Add these lines after the last printf call.
+```asm
+	# convert integer to ASCII character
+	mov eax, DWORD PTR ncalls.0[rip]
+	add eax, 48    # '0'
+
+	# push_ it to stack to get a memory address as 
+	# rdi expects a buffer
+	push rax
+
+	# invoke sys_write
+	mov rax, 1
+	mov rdi, 1
+	mov rsi, rsp
+	mov rdx, 1
+	syscall
+
+	# clear the stack
+	pop rax
+```
+
+Now build the assembly.
+```bash
+$ gcc main.s -o main
+$ ./main
+
+The square of 4 is 16
+The square of 5 is 25
+The square of 6 is 36
+The square of 7 is 49
+Number of calls made to sq() are 
+4%
+```
+- Note that the % comes in zsh. In bash, you'd see the prompt instead, as there is no newline character.
+
+This proves that assembly doesn't have block scope. It is the compiler that generates an assembly such that the C variable is not accessed outside of the equivalent assembly block.
 
 ## Things I have not covered.
 
