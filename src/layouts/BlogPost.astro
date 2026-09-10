@@ -664,13 +664,36 @@ const giscusThemes = import.meta.env.PROD
 		line-height: 1.65;
 		max-width: var(--reading-width);
 	}
-	.post-article blockquote p {
-		margin: 0 0 12px;
+	.post-article blockquote > p {
+		white-space: pre-line;
+		margin: 0 0 10px;
 		font-size: inherit;
 		max-width: none;
 	}
-	.post-article blockquote p:last-child {
-		margin-bottom: 0;
+	.post-article blockquote ul,
+	.post-article blockquote ol {
+		white-space: normal;
+		margin: 8px 0 10px;
+		padding-left: 20px;
+	}
+	.post-article blockquote li {
+		margin-bottom: 4px;
+		white-space: normal;
+	}
+	.post-article blockquote li > p {
+		margin: 0;
+		display: inline;
+		white-space: normal;
+	}
+	.post-article blockquote > :last-child,
+	.post-article blockquote > p:last-child,
+	.post-article blockquote > ul:last-child,
+	.post-article blockquote > ol:last-child,
+	.post-article blockquote ul:last-child,
+	.post-article blockquote ol:last-child,
+	.post-article blockquote li:last-child,
+	.post-article blockquote li:last-child > :last-child {
+		margin-bottom: 0 !important;
 	}
 
 	/* Predictable sizing prevents CLS */
