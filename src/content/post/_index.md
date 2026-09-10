@@ -14,7 +14,7 @@ tags: [ c-to-asm ]
 
 ---
 
-There are 4 things associated with a C variable.
+There are several properties associated with C variables that I want to track and understand better. They include:
 
 1. **Scope:** *Where is the identifier available to be accessed?*
    1. The block it is declared in?
@@ -43,7 +43,7 @@ Below is a description of these storage class specifiers.
 | Storage Class Specifier | Scope (Availability) | Storage Location | Storage Duration | Linkage | Value if no initializer is provided |
 | :---------------------- | :------------------- | :--------------- | :--------------- | :------ | :---------------------------------- |
 | `auto` | Block scope | Automatic storage. More on this later. | As long as the execution is in the block the variable is defined in. | None | Indeterminate |
-| `register`  | Block Scope | A register | Automatic | None | Indeterminate |
+| `register`  | Block Scope | Automatic storage | Automatic | None | Indeterminate |
 | `static` | *Block scope* when used with an identifier present in a block; *File scope* when used with an identifier present globally in the file. | Static storage, typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | *None* for block-static and *Internal* for file-static identifiers. | 0 |
 | `extern` | N/A | Static storage, typically `.data` (if initialized), or `.bss` (if uninitialized, or zero-initialized) in ELF. | For the entire execution of the program. | External | N/A |
 
@@ -108,7 +108,7 @@ int main(void){
   printf("%f\n", pi_1);
 }
 ```
-  - The `extern` specifier tells the toolchain that this object is defined in a different translation unit.
+  - The extern specifier tells the toolchain that this declaration refers to an object with external linkage, whose definition is provided elsewhere. This is made clear in the examples section.
 
 If you notice, a block-scoped object is available and accessible within its block; a file-static object is available and accessible within the TU. *While an object with external linkage is available across all the TUs, it is not accessible by default.*
 
@@ -153,8 +153,8 @@ To understand these properties, we have to understand **linkage**.
 
 There are three types of linkage: external, internal, and none.
   - With external linkage (STB_GLOBAL), an identifier refers to the same object throughout the program (across all the TUs).
-  - Within one translation unit, each declaration of an identifier with internal linkage refers to the same object and it is visible within that TU only. An identifier with `static` storage class has internal linkage (STB_LOCAL), doesn't matter where it is declared in the file.
-  - Automatic variables have no linkage. **The why is unclear to me at this moment.** It maybe due to the fact that they cease to exist after the stack frame associated with them is released, so there is no point of assigning a linkage to them as they are transient given to the program's lifespan.
+  - At file scope, a declaration of an identifier with the `static` specifier has internal linkage. It refers to the same object throughout the translation unit and that identifier is visible within that TU only.
+  - Automatic variables have no linkage. **The why is unclear to me at this moment.** It may be due to the fact that they cease to exist after the stack frame associated with them is released, so there is no point of assigning a linkage to them as they are transient given to the program's lifespan.
 
 Therefore, from the perspective of assembly, either a symbol is available to the whole program, or the assembly file it is defined in. But as we have discussed, `availability != accessibility`.
   - A symbol has to be available to be accessible.
@@ -185,7 +185,7 @@ In ordinary functions without dynamic stack allocation (VLA), the compiler often
 
 The compiler normally doesn't emit a separate stack adjustment when a nested block ends. The compiler adjusts the stack once-for-all (release) when the function returns. **Please note that this is an observed behavior.**
 
-Just like a programmer writing assembly manually ensures that symbols are used within the intended blocks of code, even when there is no such rule, the programmer can adjust the stack pointer to conceptually represent creation/termination of c-style blocks.
+Just like a programmer writing assembly manually ensures that symbols are used within the intended blocks of code, even when there is no such rule, the programmer can adjust the stack pointer to conceptually represent creation/termination of C-style blocks.
 
 It is reasonable to ask why the compiler doesn't do what a programmer can do manually. **I don't have an answer here.** Maybe the engineers who build these compilers, or the researchers in this field can answer it better. However, we can notice that performance can be a decent contributor in this choice.
   - Adjusting the stack pointer may not be an expensive operation, but when done repeatedly may induce unintended effects on the performance.
@@ -198,7 +198,7 @@ To solidify our understanding, here are a few examples.
 
 ## Examples
 
-To compile C to x64-assembly, we will use GCC with the following flags.
+To compile C to x86-64 assembly, we will use GCC with the following flags.
 ```bash
 $ gcc main.c -S -o main.s -masm=intel -fno-ident -fno-asynchronous-unwind-tables -fno-dwarf2-cfi-asm
 ```
@@ -209,14 +209,14 @@ The flags are used to generate a clean assembly:
   - `-fno-asynchronous-unwind-tables` disables the generation of the .eh_frame section in the binary.
   - `-fno-dwarf2-cfi-asm` tells the compiler to omit DWARF2 Call Frame Information (CFI) assembler directives (.cfi_startproc, .cfi_endproc, etc.).
 
-**Note: I have used whitespaces and empty newlines to improve the readability of the assembly output. The content remains unchanged.**
+**Note: I have used whitespace and empty newlines to improve the readability of the assembly output. The content remains unchanged.**
 
 ### #1. Automatic Storage
 
 **Expectations**:
-	- At -O1, the compiler should preserve the exact semantics (stack storage).
-	- At -O2, the compiler should optimize as the logic is very simple (register).
-
+	- At -O0, the compiler preserves the exact program semantics. Often times, stack is used here. But it is an observed behavior.
+	- At -O1, the compiler looks for optimizations. If the logic is simple enough, it may promote certain memory-based accesses to register.
+**
 ```c
 #include <stdio.h>
 
@@ -351,7 +351,7 @@ Explanation of the directives:
 
 Questions.
 	1. Why there is no `.section .bss`? The compiler has multiple ways to reserve memory in `.bss`. The compiler might prefer one over the other given the priorities. Discussing this is out-of-scope of this writing.
-	2. Why `num` is changed to `num.0`? It prevents "duplicate symbol error" when variables with identical names in different blocks are given static storage. For example, both `foo()` and `bar()` declaring a `static int count;`. Again, discussing that is out-of-scope f this writing.
+	2. Why `num` is changed to `num.0`? It prevents "duplicate symbol error" when variables with identical names in different blocks are given static storage. For example, both `foo()` and `bar()` declaring a `static int count;`. Again, discussing that is out-of-scope of this writing.
 
 ### #4. Initialized Block Statics
 
@@ -403,7 +403,7 @@ int main(void){
   static int num = 0;
 }
 ```
-  - The output will be identical, except the filename, of course. Use `diff` to double check.
+  - The assembly output is identical except for the filename. Use `diff` to double check.
 
 This is the assembly:
 ```nasm
@@ -443,6 +443,38 @@ Use `readelf` to inspect symbol information in the generated binary.
    Num:    Value          Size Type    Bind   Vis      Ndx Name
     12: 0000000000004020     4 OBJECT  LOCAL  DEFAULT   25 num2
     29: 000000000000401c     4 OBJECT  GLOBAL DEFAULT   25 num1
+```
+
+### #7. The use of `extern`
+
+`num.c` defines a variable with external linkage.
+```c
+/* num.c */
+int num = 50;
+```
+
+`main.c` declares a `num` variable locally in the main(). Normally it would take precedence over the one with external linkage. However, when we specify that we would like to use the one with external linkage in the unnamed block, the source is built such that the `num` used in the unnamed block is the one present in `num.c`.
+```c
+/* main.c */
+#include <stdio.h>
+
+int main(void){
+  int num = 4;
+
+  printf("num: %d\n", num);
+
+  {
+    extern int num;
+    printf("num: %d\n", num);
+  }
+}
+```
+
+The output:
+```bash
+→ gcc main.c num.c -o main
+→ ./main
+50
 ```
 
 ## Things I have not covered.
