@@ -84,13 +84,14 @@ const avatarUrl = profile?.avatar ? absoluteUrl(profile.avatar, Astro.site) : un
 <style>
 	.about {
 		margin-bottom: 64px;
+		display: grid;
+		place-items: center;
+		height: 100vh;
 	}
 	.avatar-wrap {
-		margin-bottom: 32px;
-		display: flex;
-		justify-content: center;
-		margin-left: -100px;
-		align-item: center;
+		margin-bottom: 28px;
+		display: grid;
+		place-items: center;
 	}
 	.author-avatar {
 		width: 104px;
