@@ -517,7 +517,7 @@ sq:
 	push rbp
 	mov  rbp, rsp
 	sub  rsp, 16
-	mov	DWORD PTR -4[rbp], edi
+	mov  DWORD PTR -4[rbp], edi
 
 	mov	eax, DWORD PTR ncalls.0[rip]    # ncalls
 	add	eax, 1                          # compute ncalls++
@@ -638,3 +638,5 @@ They might be unusual or strange, but I'd like to explore them in future.
 1. [ISO/IEC 9889:2024 Draft](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf)
 
 2. [Storage-class specifiers on cppreference.com](https://en.cppreference.com/c/language/storage_duration)
+
+3. [GNU as Directives](https://ftp.gnu.org/old-gnu/Manuals/gas-2.9.1/html_chapter/as_7.html)
