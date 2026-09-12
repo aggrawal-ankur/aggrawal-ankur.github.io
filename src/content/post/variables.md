@@ -633,6 +633,10 @@ They might be unusual or strange, but I'd like to explore them in future.
 2. Why assembly doesn't have a true block scope? What were the challenges that made the engineers not build something similar?
 3. Why the identifiers that are stored on stack have no linkage. This one sounds very obvious, but I am very confused about it.
 
+## Discussion
+
+The discussion related to this post can be accessed at [LinkedIn](https://lnkd.in/p/g36wpeJB)
+
 # References
 
 1. [ISO/IEC 9889:2024 Draft](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf)
