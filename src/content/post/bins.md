@@ -1,3 +1,12 @@
+---
+title: "Understanding bins in malloc in glibc-2.43."
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This is an in-depth exploration of the bins[] data structure in the virtual memory allocator in glibc-2.43."
+tags: [ glibc-malloc ]
+draft: true
+---
+
 - [The Problem](#the-problem)
 - [Part 1: The Implementation Of Bins](#part-1-the-implementation-of-bins)
   - [Note](#note)
@@ -16,8 +25,6 @@
   - [Bin Indexing](#bin-indexing)
   - [Largebin Size Ranges, Part 2](#largebin-size-ranges-part-2)
 - [Part 3: Dynamic Analysis of bins\[\]](#part-3-dynamic-analysis-of-bins)
-
-Status: Done
 
 # The Problem
 

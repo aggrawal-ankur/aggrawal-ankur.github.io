@@ -1,4 +1,11 @@
-Status: Done
+---
+title: "What is a foreign sbrk in glibc-malloc?"
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This article explores the idea of foreign sbrk in malloc in glibc-2.43."
+tags: [ glibc-malloc ]
+draft: true
+---
 
 # Foreign SBRK
 

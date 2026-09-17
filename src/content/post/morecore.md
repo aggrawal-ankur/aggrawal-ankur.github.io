@@ -1,6 +1,11 @@
-Status: Done
-
-# What actually backs the main_arena?
+---
+title: "What actually backs the main_arena in glibc-malloc?"
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This articles explores the different ways in which main_arena gets its memory."
+tags: [ glibc-malloc ]
+draft: true
+---
 
 ***While non-main arenas are purely mmap-backed, things work differently with the main_arena.***
 

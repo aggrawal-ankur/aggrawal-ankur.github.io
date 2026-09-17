@@ -1,4 +1,11 @@
-Status: Done.
+---
+title: "The size and alignment rules in malloc."
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This is an in-depth analysis of size and alignment constraints in malloc glibc-2.43"
+tags: [ glibc-malloc ]
+draft: true
+---
 
 # The Size Model
 

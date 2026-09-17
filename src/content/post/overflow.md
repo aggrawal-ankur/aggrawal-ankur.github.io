@@ -1,4 +1,11 @@
-Status: Done.
+---
+title: "Why PTRDIFF_MIN and PTRDIFF_MAX are used instead of SIZEMAX to detect overflow in malloc?"
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This articles explores pointer mechanics in C and how they influence the choice of PTRDIFF_* range instead of [0, SIZEMAX] when size_t is the type."
+tags: [ glibc-malloc ]
+draft: true
+---
 
 # Overflow Mechanics
 

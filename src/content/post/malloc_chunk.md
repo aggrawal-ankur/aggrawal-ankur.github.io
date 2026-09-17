@@ -1,3 +1,12 @@
+---
+title: "What is a chunk in malloc?"
+publishDate: "2026-09-10"
+# updatedDate: "2026-M-D"
+description: "This is an in-depth exploration of the malloc_chunk struct in malloc in glibc-2.43."
+tags: [ glibc-malloc ]
+draft: true
+---
+
 - [Chunk Description](#chunk-description)
   - [Layout History](#layout-history)
   - [Layout Description](#layout-description)
@@ -5,8 +14,6 @@
   - [Fragmentation](#fragmentation)
   - [Coalescing](#coalescing)
 - [Dynamic Analysis](#dynamic-analysis)
-
-Status: Done.
 
 # Chunk Description
 
