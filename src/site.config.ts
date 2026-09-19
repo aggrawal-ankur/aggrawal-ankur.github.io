@@ -12,7 +12,7 @@ export const siteConfig: SiteConfig = {
 		},
 	},
 	description:
-		"My name is Ankur and I ask questions to understand things that either interest me or trouble me. I write about some of these questions here. Read the About section for more.",
+		"My name is Ankur. I ask questions to understand things that either interest me or trouble me. I write about some of these questions here. Read the About section for more.\nI am exploring x86 Intel virtualization in Linux (KVM) right now.",
 	lang: "en-US",
 	ogLocale: "en_US",
 	sortPostsByUpdatedDate: false,
