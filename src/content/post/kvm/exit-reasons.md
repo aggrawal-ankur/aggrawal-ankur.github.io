@@ -7,6 +7,9 @@ tags: [ linux-kvm ]
 draft: true
 ---
 
+[WHAT IS A VM Exit]
+[DELIBERATE, ACCIDENTAL]
+
 The following VM exit events are defined in [*root/include/uapi/linux/kvm.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/kvm.h?h=v7.2.6#n151).
 
 | VM Exit (Macro) | Constant Value | Availability |
@@ -118,7 +121,7 @@ Soon we will experience that this classification is probably the right one to un
 
 ---
 
-# Declarations Outside The Unnamed Union.
+# Declarations Outside The Unnamed Union
 
 | Field | Description |
 | ----- | ----------- |
@@ -140,15 +143,19 @@ A VM exit is handled by the VMM. Many of these events are complex in-a-way that 
 
 The table at the start of the text mentions 44 VM exit events. But an exit correspond to only one reason at a time.
 
-If `kvm_run` defined these exit specific payloads (structs) at the top-level, the struct will waste a lot of memory. That's why they are declared in a union.
+If `kvm_run` defined these exit specific payloads (structs) at the top-level, the struct will take unnecessary space. That's why they are declared in a union.
 
-An anonymous struct/union makes its members directly accessible through the struct/union containing them, as if they were present directly at that level. This removes an unnecessary level of indirection in accessing exit-specific payloads.
+An anonymous struct/union makes its members directly accessible through the struct/union containing them, as if they were present directly at that level. This removes an unnecessary indirection in accessing exit-specific payloads.
 
 Some of these events are self-explanatory and don't require any extra information. Therefore, not all events have corresponding exit-specific structures in the unnamed union.
 
-# KVM_EXIT_UNKNOWN
+`kvm_run` defines exit-specific structures for `34/44` events. Below is a description of the general and x86-specific exit structures.
 
-The vCPU has exited due to an unknown reason. Further arch-specific information is available in `hardware_exit_reason`.
+---
+
+## KVM_EXIT_UNKNOWN
+
+The vCPU has exited due to an unknown reason. Further arch-specific information is provided in `hardware_exit_reason`.
 
 ```c
 struct {
@@ -156,13 +163,13 @@ struct {
 } hw;
 ```
 
-A complete list of hardware exit reasons in Intel x86 can be found in *Intel SDM Volume 3, Appendix C: VMX BASIC EXIT REASONS*.
+> A complete list of hardware exit reasons in Intel x86 can be located in the *Intel SDM Volume 3, Appendix C: VMX BASIC EXIT REASONS*.
 
 ---
 
-# KVM_EXIT_FAIL_ENTRY
+## KVM_EXIT_FAIL_ENTRY
 
-The vCPU could not be run (or, a VM entry can not be made) due to an unknown reason. Further arch-specific information is available in `hardware_entry_failure_reason`.
+The vCPU could not enter guest execution (or, a VM entry can not be made) due to an unknown reason. Further arch-specific information is provided in `hardware_entry_failure_reason`.
 
 ```c
 struct {
@@ -173,11 +180,15 @@ struct {
 
 - `cpu` is the identifier associated with the host logical CPU where the failed guest entry occurred.
 
+[List of hardware entry failure reasons].
+
 ---
 
-# KVM_EXIT_EXCEPTION
+## KVM_EXIT_EXCEPTION
 
-[INSERT INFO]
+It appears to represent a guest exception, with fields for the exception number and error code. However, the official KVM API [documentation](https://docs.kernel.org/virt/kvm/api.html#the-kvm-run-structure) doesn't have a description for it. It merely says it is unused.
+
+[WHY IT IS UNUSED?]
 
 ```c
 struct {
@@ -188,7 +199,7 @@ struct {
 
 ---
 
-# KVM_EXIT_IO
+## KVM_EXIT_IO
 
 The vCPU has executed a port-based I/O instruction which could not be satisfied by kvm.
 ```c
@@ -205,7 +216,7 @@ struct {
 } io;
 ```
 
-- `direction` determines whether it is an input (KVM_EXIT_IO_IN) or an output (KVM_EXIT_IO_OUT) operation.
+- `direction` determines whether it is an input (`KVM_EXIT_IO_IN`) or an output (`KVM_EXIT_IO_OUT`) operation.
 - `size`
 - `port` is the I/O port number accessed by the guest.
 - `count` is the number of transfers accessed by the guest.
@@ -213,16 +224,16 @@ struct {
 
 ---
 
-# KVM_EXIT_DEBUG
+## KVM_EXIT_DEBUG
 
-The vCPU is processing a debug event for which arch-specific information is returned.
+The vCPU is processing a guest debug event for which arch-specific information is returned.
 ```c
 struct {
 	struct kvm_debug_exit_arch arch;
 } debug;
 ```
 
-`kvm_debug_exit_arch` is defined in [root/arch/x86/include/uapi/asm/kvm.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/include/uapi/asm/kvm.h?h=v7.2.6#n290)
+`kvm_debug_exit_arch` is an architecture-specific payload whose layout depends on the target architecture. The x86 definition can be located in [*root/arch/x86/include/uapi/asm/kvm.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/include/uapi/asm/kvm.h?h=v7.2.6#n290).
 ```c
 struct kvm_debug_exit_arch {
 	__u32 exception;
@@ -241,7 +252,7 @@ struct kvm_debug_exit_arch {
 
 ---
 
-# KVM_EXIT_MMIO
+## KVM_EXIT_MMIO
 
 The vCPU has executed a memory-mapped I/O instruction which could not be satisfied by kvm.
 ```c
@@ -259,3 +270,228 @@ struct {
 - `is_write` is `1` if the guest wrote to the MMIO address, `0` if the guest read from it.
 
 **Note**: KVM_EXIT_IO is significantly faster than KVM_EXIT_MMIO.
+
+---
+
+## KVM_EXIT_HYPERCALL
+
+The guest code executed a hypercall that KVM exposed to userspace. A hypercall is a deliberate guest-to-hypervisor communication mechanism.
+
+```c
+/* KVM_EXIT_HYPERCALL */
+struct {
+	__u64 nr;
+	__u64 args[6];
+	__u64 ret;
+
+	union {
+
+#ifndef __KERNEL__
+		__u32 longmode;
+#endif
+
+		__u64 flags;
+	};
+} hypercall;
+```
+
+- `nr` identifies the hypercall number.
+- `args[6]` represent the arguments passed to the hypercall.
+- `ret`
+- `flags`
+
+`KVM_EXIT_HYPERCALL` was intended to notify userspace about a guest hypercall and provide its number and arguments. However, the KVM API docs recommend to use I/O exits (`KVM_EXIT_IO` and `KVM_EXIT_MMIO`) to implement any functionality that requires a guest to interact with the host userspace.
+
+[ELABORATE THIS, AND THE WHY BEHIND IT].
+
+---
+
+## KVM_EXIT_TPR_ACCESS
+
+It is an x86-specific VM exit related to accesses to the vCPU's Task Priority Register (TPR).
+
+```c
+struct {
+	__u64 rip;
+	__u32 is_write;
+	__u32 pad;
+} tpr_access;
+```
+
+- `rip` points to the guest instruction at the access.
+- `is_write` determines whether the access was a read (0) or a write (1).
+- `pad` represents the padding bytes.
+
+However, the KVM API documentation currently leaves the detailed semantics undocumented.
+
+---
+
+## KVM_EXIT_INTERNAL_ERROR
+
+[NEEDS TO BE EXPLORED]
+
+---
+
+## KVM_EXIT_SYSTEM_EVENT
+
+It reports a system-level event concerning the VM that requires VMM handling.
+
+[WHAT IS A SYSTEM-LEVEL EVENT]
+
+```c
+struct {
+
+#define KVM_SYSTEM_EVENT_SHUTDOWN     1
+#define KVM_SYSTEM_EVENT_RESET        2
+#define KVM_SYSTEM_EVENT_CRASH        3
+#define KVM_SYSTEM_EVENT_WAKEUP       4
+#define KVM_SYSTEM_EVENT_SUSPEND      5
+#define KVM_SYSTEM_EVENT_SEV_TERM     6
+#define KVM_SYSTEM_EVENT_TDX_FATAL    7
+
+  __u32 type;
+  __u32 ndata;
+
+	union {
+
+#ifndef __KERNEL__
+    __u64 flags;
+#endif
+		__u64 data[16];
+	};
+
+} system_event;
+```
+
+- `type` identifies the kind of system event that has occurred.
+- `ndata`
+- `flags`
+- `data[16]`
+
+KVM defines 7 system-level events.
+
+| KVM_SYSTEM_EVENT_ | Constant | Description |
+| ----------------- | -------- | ----------- |
+| `KVM_SYSTEM_EVENT_SHUTDOWN`  | 1 |
+| `KVM_SYSTEM_EVENT_RESET`     | 2 |
+| `KVM_SYSTEM_EVENT_CRASH`     | 3 |
+| `KVM_SYSTEM_EVENT_WAKEUP`    | 4 |
+| `KVM_SYSTEM_EVENT_SUSPEND`   | 5 |
+| `KVM_SYSTEM_EVENT_SEV_TERM`  | 6 | 
+| `KVM_SYSTEM_EVENT_TDX_FATAL` | 7 | The guest has requested a suspension of the VM. |
+
+---
+
+## KVM_EXIT_IOAPIC_EOI
+
+It is an x86-specific exit that reports that the guest has issued an EOI for an interrupt handled by the virtual IOAPIC.
+
+```c
+struct {
+	__u8 vector;
+} eoi;
+```
+
+- `vector` is the interrupt vector for which the guest issued the EOI.
+
+---
+
+## KVM_EXIT_X86_RDMSR and KVM_EXIT_X86_WRMSR
+
+They are x86-specific exits that reports the guest's invocation of the `RDMSR` and `WRMSR` instructions to the VMM.
+
+```c
+struct {
+	__u8 error;  /* user -> kernel */
+	__u8 pad[7];
+
+#define KVM_MSR_EXIT_REASON_INVAL      (1 << 0)
+#define KVM_MSR_EXIT_REASON_UNKNOWN	   (1 << 1)
+#define KVM_MSR_EXIT_REASON_FILTER     (1 << 2)
+
+#define KVM_MSR_EXIT_REASON_VALID_MASK  (  \ 
+KVM_MSR_EXIT_REASON_INVAL    |             \
+KVM_MSR_EXIT_REASON_UNKNOWN  |             \
+KVM_MSR_EXIT_REASON_FILTER   \
+)
+	__u32 reason; /* kernel -> user */
+	__u32 index;  /* kernel -> user */
+	__u64 data;   /* kernel <-> user */
+} msr;
+```
+
+When the VM capability `KVM_CAP_X86_USER_SPACE_MSR` is enabled, MSR accesses to registers that would invoke a #GP by KVM kernel code may instead trigger a `KVM_EXIT_X86_RDMSR` exit for reads and `KVM_EXIT_X86_WRMSR` exit for writes.
+
+- `error`
+- `pad[7]`
+- `reason`
+- `index`
+- `data`
+
+---
+
+## KVM_EXIT_NOTIFY
+
+```c
+struct {
+#define KVM_NOTIFY_CONTEXT_INVALID	(1 << 0)
+	__u32 flags;
+} notify;
+```
+
+---
+
+## KVM_EXIT_MEMORY_FAULT
+
+It indicates the vCPU has encountered a memory fault that could not be resolved by KVM.
+
+```c
+struct {
+
+#define KVM_MEMORY_EXIT_FLAG_PRIVATE	(1ULL << 3)
+
+	__u64 flags;
+	__u64 gpa;
+	__u64 size;
+} memory_fault;
+```
+
+- `gpa` and `size` (in bytes) describe the guest physical address range `[gpa, gpa + size)` of the fault.
+- `flags` describes properties of the faulting access that are likely pertinent.
+
+[MORE INFO IS REQUIRED]
+
+---
+
+## KVM_EXIT_TDX
+
+```c
+struct {
+	__u64 flags;
+	__u64 nr;
+
+	union {
+		struct {
+			__u64 ret;
+			__u64 data[5];
+		} unknown;
+
+		struct {
+			__u64 ret;
+			__u64 gpa;
+			__u64 size;
+		} get_quote;
+
+		struct {
+			__u64 ret;
+			__u64 leaf;
+			__u64 r11, r12, r13, r14;
+		} get_tdvmcall_info;
+
+		struct {
+			__u64 ret;
+			__u64 vector;
+		} setup_event_notify;
+	};
+} tdx;
+```
