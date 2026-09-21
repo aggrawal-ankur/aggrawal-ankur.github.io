@@ -1,13 +1,13 @@
 ---
-title: "VM Exits in KVM v7.2.6"
+title: "VM Exits in KVM: Linux Kernel v7.2.6"
 publishDate: "2026-09-19"
 # updatedDate: "2026-M-D"
-description: "This text explores the various reasons a VM exit can happen (on Intel x86) and how the VMM is notified about it (struct kvm_run)."
+description: "This text explores the various reasons a VM exit can occur (on Intel x86) and how the VMM is notified about it (struct kvm_run). It is based on the Linux Kernel v7.2.6 release."
 tags: [ linux-kvm ]
 draft: true
 ---
 
-KVM v7.2.6 defines the following VM exit events in [*root/include/uapi/linux/kvm.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/kvm.h?h=v7.2.6#n151).
+The following VM exit events are defined in [*root/include/uapi/linux/kvm.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/kvm.h?h=v7.2.6#n151).
 
 | VM Exit (Macro) | Constant Value | Availability |
 | --------------- | -------------- | ------------ |
@@ -60,15 +60,15 @@ KVM v7.2.6 defines the following VM exit events in [*root/include/uapi/linux/kvm
 
 `kvm_run` is a shared communication channel between the virtual machine monitor (VMM) and KVM for the `KVM_RUN` operation running on one particular virtual CPU.
 
-The VMM can convey KVM how to perform on the next `KVM_RUN` operation. On the other hand, KVM can convey the VMM why the guest execution stopped and provide exit-specific data when applicable.
+The VMM uses it to convey KVM how to perform on the next `KVM_RUN` operation. Meanwhile, KVM uses it to notify the VMM about the reason guest execution stopped and provide exit-specific data when applicable.
 
 ---
 
 It is defined in [*root/include/uapi/linux/kvm.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/kvm.h?h=v7.2.6#n223).
 
-The definition is both humongous and frightening, thanks to the formatting. It is defined across 297 lines (224 - 521).
+The definition is humongous (294 lines) and the formatting makes it look frightening.
 
-Personally, I work better when things are properly formatted. After formatting `kvm_run` to my choice, it feels less frightening, although its enormity remains unchanged (354 lines).
+Personally, I work better when things are properly formatted. After formatting `kvm_run` to my liking, it feels less frightening, although its enormity remains unchanged (354 lines).
 
 It is not meaningful to paste the struct here. I'd recommend opening it in side.
 
@@ -111,29 +111,40 @@ struct kvm_run {
 ```
 
 We can divide `kvm_run` into two portions.
-  1. The declaration inside the unnamed union.
-  2. The declarations outside the unnamed union.
+  1. The declarations outside the unnamed union.
+  2. The declarations inside the unnamed union.
+
+Soon we will experience that this classification is probably the right one to understand `kvm_run`.
 
 ---
 
-Let's understand the declarations outside the unnamed union.
+# Declarations Outside The Unnamed Union.
 
-- `exit_reason` identifies why the guest execution stopped. The VMM compares the value in this field with the VM exit macros to proceed.
-- `immediate_exit`
-- `flags`
+| Field | Description |
+| ----- | ----------- |
+| `exit_reason` | Identifies why the guest execution stopped. The VMM compares this value with the VM exit macros to proceed with the handling. |
+| `immediate_exit` |
+| `flags` |
+| `request_interrupt_window` |
+| `ready_for_interrupt_injection` | Indicates whether KVM can inject a virtual interrupt at this moment.
+| `if_flag` | |
+| `cr8` |
+| `apic_base` | Exposes the virtual local APIC base, or configuration state. |
+| `kvm_valid_regs` | 
+| `kvm_dirty_regs` | Indicates which register groups the userspace code (VMM) has modified that KVM must reload. |
 
-- `request_interrupt_window`
-- `ready_for_interrupt_injection` indicates whether KVM can inject a virtual interrupt at this moment.
-- `if_flag` reports the guest's interrupt-enable state (`IF`).
-- `cr8`
-- `apic_base` exposes the virtual local APIC base, or configuration state.
 
-- `kvm_valid_regs` 
-- `kvm_dirty_regs` indicates which register groups the userspace code (VMM) has modified that KVM must reload.
+# The Unnamed Union
 
----
+A VM exit is handled by the VMM. Many of these events are complex in-a-way that the VMM requires certain exit-specific information to handle them appropriately.
 
-Let's understand the declaration inside the unnamed union.
+The table at the start of the text mentions 44 VM exit events. But an exit correspond to only one reason at a time.
+
+If `kvm_run` defined these exit specific payloads (structs) at the top-level, the struct will waste a lot of memory. That's why they are declared in a union.
+
+An anonymous struct/union makes its members directly accessible through the struct/union containing them, as if they were present directly at that level. This removes an unnecessary level of indirection in accessing exit-specific payloads.
+
+Some of these events are self-explanatory and don't require any extra information. Therefore, not all events have corresponding exit-specific structures in the unnamed union.
 
 # KVM_EXIT_UNKNOWN
 
