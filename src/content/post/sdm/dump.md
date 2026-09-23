@@ -450,3 +450,165 @@ When in 64-bit mode, the operand size determines the number of valid bits in the
 ---
 
 ### Segment Registers
+
+***A segment selector*** is a special pointer that identifies a segment in memory. To access a particular segment in memory, the segment selector for that segment must be present in the appropriate segment register.
+
+The four segment registers `CS`, `DS`, `SS`, and `ES` are the same as the segment registers found in the Intel 8086 and Intel 286 processors and the `FS` and `GS` registers were introduced into the IA-32 Architecture with the Intel386 family of processors.
+
+These segment registers hold 16-bit segment selectors.
+
+When writing application code, programmers generally create segment selectors with assembler directives and symbols. The assembler and other tools then create the actual segment selector values associated with these directives and symbols. If writing system code, programmers may need to create segment selectors directly
+
+#### Using Segment Selectors
+
+How segment registers are used depends on the type of memory management model that the operating system or executive is using.
+
+When using the ***flat memory model***, segment registers are loaded with segment selectors that point to overlapping segments, each of which begins at address 0 of the linear address space.
+  - These overlapping segments then comprise the linear address space for the program. Typically, two overlapping segments are defined: one for code and another for data and stacks.
+  - The CS segment register points to the code segment and all the other segment registers point to the data and stack segment.
+
+---
+
+When using the ***segmented memory model***, each segment register is ordinarily loaded with a different segment selector so that each segment register points to a different segment within the linear address space.
+
+At any time, a program can thus access up to six segments in the linear address space. To access a segment not pointed to by one of the segment registers, a program must first load the segment selector for the segment to be accessed into a segment register.
+
+---
+
+Each of the segment registers is associated with one of the three types of storage: *code*, *data*, or *stack*. For example, the `CS` register contains the segment selector for the code segment, where the instructions being executed are stored.
+  - The processor fetches instructions from the code segment, using a logical address that consists of the segment selector in the `CS` register and the contents of the `EIP` register. The EIP register contains the offset within the code segment of the next instruction to be executed.
+  - The `CS` register cannot be loaded explicitly by an application program. Instead, it is loaded implicitly by instructions or internal processor operations that change program control (such as procedure calls, interrupt handling, or task switching).
+
+---
+
+The `DS`, `ES`, `FS`, and `GS` registers point to four data segments. The availability of four data segments permits efficient and secure access to different types of data structures. For example, four separate data segments might be created:
+  - one for the data structures of the current module, 
+  - another for the data exported from a higher-level module, 
+  - a third for a dynamically created data structure, and 
+  - a fourth for data shared with another program.
+
+  To access additional data segments, the application program must load segment selectors for these segments into the `DS`, `ES`, `FS`, and `GS` registers, as needed.
+
+---
+
+The `SS` register contains the segment selector for the stack segment, where the procedure stack is stored for the program, task, or handler currently being executed. All stack operations use the `SS` register to find the stack segment.
+
+Unlike the `CS` register, the `SS` register can be loaded explicitly, which permits application programs to set up multiple stacks and switch among them.
+
+---
+
+#### Segment Registers in 64-Bit Mode
+
+The `CS`, `DS`, `ES`, and `SS` are treated as if each segment base is 0, regardless of the value of the associated segment descriptor base. This creates a flat address space for code, data, and stack.
+
+`FS` and `GS` are exceptions. They may be used as additional base registers in linear address calculations (in the addressing of local data and certain operating system data structures).
+
+Even though segmentation is generally disabled, segment register loads may cause the processor to perform segment access assists. During these activities, enabled processors will still perform most of the legacy checks on loaded values (even if the checks are not applicable in 64-bit mode). Such checks are needed because a segment register loaded in 64-bit mode may be used by an application running in compatibility mode.
+
+Limit checks for `CS`, `DS`, `ES`, `SS`, `FS`, and `GS` are disabled in 64-bit mode.
+
+---
+
+### EFLAGS Register
+
+The 32-bit `EFLAGS` register contains a group of status flags, a control flag, and a group of system flags. 
+  - The status flags indicate the results of arithmetic instructions. Only the `CF` flag can be modified directly, using the `STC`, `CLC`, and `CMC` instructions. Also the bit instructions (`BT`, `BTS`, `BTR`, and `BTC`) copy a specified bit into the `CF` flag.
+  - The system flags and the IOPL field control operating-system or executive operations.
+
+
+| Bit Position | Flag | Type/Note | Description |
+| ------------ | ---- | --------- | ----------- |
+| 0  | (CF) Carry Flag | (S) Status flag | Set if an arithmetic operation generates a carry or a borrow out of the most-significant bit of the result; cleared otherwise.
+|    | | | This flag indicates an overflow condition for unsigned-integer arithmetic. It is also used in multiple-precision arithmetic. |
+| 1  | Reserved | Always keep it set (1) |
+| 2  | (PF) Parity Flag | (S) Status flag | Set if the least-significant byte of the result contains an even number of 1 bits; cleared otherwise. |
+| 3  | Reserved |
+| 4  | (AF) Auxiliary Flag | (S) Status flag | Set if an arithmetic operation generates a carry or a borrow out of bit 3 of the result; cleared otherwise.
+|    | | | This flag is used in binary-coded decimal (BCD) arithmetic. |
+| 5  | Reserved |
+| 6  | (ZF) Zero Flag | (S) Status flag | Set if the result is zero; cleared otherwise. |
+| 7  | (SF) Sign Flag | (S) Status flag | Set equal to the most-significant bit of the result, which is the sign bit of a signed integer. | 
+|    | | | 0 indicates a positive value and 1 indicates a negative value. |
+| 8  | (TF) Trap Flag | (S) System flag | When set enables single-step mode for debugging. |
+| 9  | (IF) Interrupt Enable Flag | (S) System flag | Controls the response of the processor to maskable interrupt requests. |
+|    | | | Set to respond to maskable interrupts; cleared to inhibit maskable interrupts. |
+| 10 | (DF) Direction Flag | (C) Control Flag | Setting the DF flag causes the string instructions to ***auto-decrement*** (to process strings from high addresses to low addresses). |
+|    | | | Clearing the DF flag causes the string instructions to ***auto-increment*** (process strings from low addresses to high addresses). |
+|    | | | The STD and CLD instructions set and clear the DF flag, respectively. |
+| 11 | (OF) Overflow Flag  | (S) Status flag  | Set if the integer result is too large a positive number or too small a negative number (excluding the sign-bit) to fit in the destination operand; cleared otherwise. |
+|    | | | This flag indicates an overflow condition for signed-integer (2s complement) arithmetic. |
+| 12, 13 | (IOPL) I/0 Privilege Level | (S) System flag | Indicates the I/O privilege level of the currently running program or task. |
+|    | | | The current privilege level (CPL) of the currently running program or task must be less than or equal to the I/O privilege level to access the I/O address space. |
+|    | | | The `POPF` and `IRET` instructions can modify this field only when operating at a CPL of 0. |
+| 14 | (NT) Nested Task | (S) System flag | Controls the chaining of interrupted and called tasks. |
+|    | | | Set when the current task is linked to the previously executed task; cleared when the current task is not linked to another task. |
+| 15 | Reserved |
+| 16 | (RF) Resume Flag | (S) System flag | Controls the processor's response to debug exceptions. |
+| 17 | (VM) Virtual 8086 Mode | (S) System flag | Set to enable virtual-8086 mode; clear to return to protected mode without virtual-8086 mode semantics. |
+| 18 | (AC) Alignment Check/Access Control | (S) System flag | If the `CR0.AM` bit is set, alignment checking of user-mode data accesses is enabled iff this flag (AC) is 1. |
+|    | | | If the `CR4.SMAP` bit is set, explicit supervisor-mode data accesses to user-mode pages are allowed iff this bit (AC) is 1. |
+| 19 | (VIF) Virtual Interrupt Flag | (S) System flag | Virtual image of the IF flag. Used in conjunction with the VIP flag. |
+|    | | | To use this flag and the VIP flag, the virtual mode extensions are enabled by setting the `CR4.VME` bit. |
+| 20 | (VIP) Virtual Interrupt Pending | (S) System flag | Set to indicate that an interrupt is pending; clear when no interrupt is pending. |
+|    | | | Software sets and clears this flag; the processor only reads it. Used in conjunction with the VIF flag. |
+| 21 | (ID) ID Flag | (S) System flag | The ability of a program to set or clear this flag indicates support for the CPUID instruction. | 
+| 31:22 | Reserved |
+
+
+Following initialization of the processor (either by asserting the `RESET` pin or the `INIT` pin), the state of the `EFLAGS` register is `0x00000002`. Bits 1, 3, 5, 15, and 22 through 31 of this register are reserved. Software should not use or depend on the states of any of these bits.
+
+Some of the flags in the `EFLAGS` register can be modified directly, using special-purpose instructions. There are no instructions that are allowed to examine or modify the whole register directly.
+
+The following instructions can be used to move groups of flags to and from the procedure stack or the EAX register: `LAHF`, `SAHF`, `PUSHF`, `PUSHFD`, `POPF`, and `POPFD`.
+
+After the contents of the `EFLAGS` register have been transferred to the procedure stack or EAX register, the flags can be examined and modified using the processor's bit manipulation instructions (`BT`, `BTS`, `BTR`, and `BTC`).
+
+When suspending a task (using the processor's multitasking facilities), the processor automatically saves the state of the `EFLAGS` register in the task state segment (`TSS`) for the task being suspended. When binding itself to a new task, the processor loads the `EFLAGS` register with data from the new task's `TSS`.
+
+When a call is made to an interrupt or exception handler procedure, the processor automatically saves the state of the `EFLAGS` registers on the procedure stack. When an interrupt or exception is handled with a task switch, the state of the `EFLAGS` register is saved in the `TSS` for the task being suspended.
+
+In 64-bit mode, `EFLAGS` is extended to 64 bits and called `RFLAGS`.
+  - The upper 32 bits of `RFLAGS` register are reserved.
+  - The lower 32 bits of `RFLAGS` remains the same as `EFLAGS`.
+
+---
+
+### Instruction Pointer
+
+The instruction pointer (`EIP`) register contains the offset in the current code segment for the next instruction to be executed. It is advanced from one instruction boundary to the next in straight-line code or it is moved ahead or backwards by a number of instructions when executing `JMP`, `Jcc`, `CALL`, `RET`, and `IRET` instructions.
+
+The `EIP` register cannot be accessed directly by software. It is controlled implicitly by control-transfer instructions (such as `JMP`, `Jcc`, `CALL`, and `RET`), interrupts, and exceptions.
+  - The only way to read the `EIP` register is to execute a `CALL` instruction and then read the value of the return instruction pointer from the procedure stack.
+  -  The `EIP` register can be loaded indirectly by modifying the value of a return instruction pointer on the procedure stack and executing a return instruction (`RET` or `IRET`).
+
+In 64-bit mode, the `RIP` register becomes the instruction pointer. This register holds the 64-bit offset of the next instruction to be executed.
+
+64-bit mode also supports a technique called `RIP`-relative addressing. Using which, the effective address is determined by adding a displacement to the `RIP` of the next instruction.
+
+---
+
+### Operand Size and Address Size Attributes
+
+When the processor is executing in protected mode, every code segment has a default operand-size and address-size attribute. These attributes are selected with the `D` (default size) flag in the segment descriptor for the code segment.
+  - When the `D` flag is set, the 32-bit operand-size and address-size attributes are selected.
+  - When the flag is clear, the 16-bit size attributes are selected.
+
+The ***operand-size attribute*** selects the size of operands.
+  - When the 16-bit operand-size attribute is in force, operands can generally be either 8 bits or 16 bits. 
+  - When the 32-bit operand-size attribute is in force, operands can generally be 8 bits or 32 bits.
+
+The ***address-size attribute*** selects the sizes of addresses used to address memory: 16 bits or 32 bits. 
+  - When the 16-bit address-size attribute is in force, segment offsets and displacements are 16 bits. This restriction limits the size of a segment to 64 KiB.
+  - When the 32-bit address-size attribute is in force, segment offsets and displacements are 32 bits, allowing up to 4 GiB to be addressed.
+
+The default operand-size attribute and/or address-size attribute can be overridden for a particular instruction by adding an operand-size and/or address-size prefix to an instruction.
+
+---
+
+In 64-bit mode, the default address size is 64 bits and the default operand size is 32 bits. Defaults can be overridden using prefixes.
+
+Address-size and operand-size prefixes allow mixing of 32/64-bit data and 32/64-bit addresses on an instruction-by-instruction basis. Note that 16-bit addresses are not supported in 64-bit mode.
+
+---
+
+### Operand Addressing
