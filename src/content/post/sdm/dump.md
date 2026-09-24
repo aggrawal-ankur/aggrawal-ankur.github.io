@@ -1,8 +1,8 @@
 ---
-title: "A Dump of My Findings"
+title: "A Dump of My Findings in the Intel SDM Volume 1"
 publishDate: "2026-09-22"
 # updatedDate: "2026-M-D"
-description: "A dump of my findings in the Intel SDM"
+description: "A dump of my findings in the Intel SDM volume 1"
 tags: [ intel-sdm ]
 draft: true
 ---
@@ -140,9 +140,9 @@ The operating mode determines which instructions and architectural features are 
 
 ### IA-32 Architecture
 
-The IA-32 architecture supports three basic operating modes: protected mode, real-address mode, and system management mode.
+The IA-32 architecture supports three basic operating modes: protected mode, real-address mode, and system management mode. These are sometimes referred to as ***legacy modes***.
 
-***Real-address mode*** implements the programming environment of the Intel 8086 processor with extensions (such as the ability to switch to protected or system management mode). The processor is placed in real-address mode following power-up or a reset.
+***Real-address mode*** implements the programming environment of the Intel 8086 processor with extensions (such as the ability to switch to protected or system management mode).
 
 ---
 
@@ -162,7 +162,10 @@ The IA-32 architecture supports three basic operating modes: protected mode, rea
 
 ### Intel 64 Architecture
 
-The Intel 64 architecture introduces the IA-32e mode, which has two sub modes: compatibility mode and 64-bit mode.
+The Intel 64 architecture supports almost all the system programming facilities available in the IA-32 architecture and
+extends them to a new operating mode, called the ***IA-32e mode***, that supports a 64-bit programming environment.
+
+The IA-32e mode allows software to operate in one of the two sub-modes: compatibility mode and 64-bit mode.
 
 ***Compatibility Mode*** permits most legacy 16-bit and 32-bit applications to run without re-compilation under a 64-bit operating system.
   - It supports all the privilege levels that are supported in the 64-bit and protected modes.
@@ -172,11 +175,26 @@ The Intel 64 architecture introduces the IA-32e mode, which has two sub modes: c
 
 ---
 
-***64-bit Mode*** enables a 64-bit operating system to run applications written to access 64-bit linear address space.
+***64-bit Mode*** enables a 64-bit operating system to run applications written to access the 64-bit linear address space.
   - 64-bit mode extends the number of general purpose registers and SIMD extension registers from 8 to 16.
   - General purpose registers are widened to 64 bits. It also introduces a new opcode prefix (REX) to access the register extensions.
   - It is enabled by the operating system on a code-segment basis. Its default address size is 64 bits and its default operand size is 32 bits. The default operand size can be overridden on an instruction-by-instruction basis using a REX opcode prefix in conjunction with an operand size override prefix.
   - REX prefixes allow a 64-bit operand to be specified when operating in 64-bit mode. By using this mechanism, many existing instructions have been promoted to allow the use of 64-bit registers and 64-bit addresses.
+
+---
+
+All Intel 64 and IA-32 processors enter real-address mode following a power-up or reset. The `CR0.PE` flag controls whether the processor is operating in real-address mode or protected mode.
+
+Software then initiates the switch from real-address mode to protected mode. The `EFLAGS.VM` flag determines whether the processor is operating in protected mode or virtual-8086 mode. Transitions between protected mode and virtual-8086 mode are generally carried out as part of a task switch or a return from an interrupt or exception handler.
+
+If IA-32e mode operation is desired, the software can initiate a switch from protected mode to the IA-32e mode.
+  - The `IA32_EFER.LMA[10]` bit determines whether the processor is operating in IA-32e mode.
+  - When running in IA-32e mode, 64-bit or compatibility sub-mode operation is determined by `CS.L` bit. 
+  - The processor enters into IA-32e mode from protected mode by enabling paging and setting the `IA32_EFER.LME[8]` bit.
+
+The processor switches to SMM whenever it receives an `SMI`. Upon execution of the `RSM` instruction, the processor always returns to the mode it was in when the `SMI` occurred.
+
+---
 
 ## Basic Execution Environment (32-Bit, or IA-32)
 
@@ -532,6 +550,8 @@ The 32-bit `EFLAGS` register contains a group of status flags, a control flag, a
 | 8  | (TF) Trap Flag | (S) System flag | When set enables single-step mode for debugging. |
 | 9  | (IF) Interrupt Enable Flag | (S) System flag | Controls the response of the processor to maskable interrupt requests. |
 |    | | | Set to respond to maskable interrupts; cleared to inhibit maskable interrupts. |
+|    | | | It does not affect the generation of exceptions or nonmaskable interrupts. |
+|    | | | The `CPL`, `IOPL`, and the state of the `CR4.VME` flag determine whether the `IF` flag can be modified by the `CLI`, `STI`, `POPF`, `POPFD`, and `IRET`. |
 | 10 | (DF) Direction Flag | (C) Control Flag | Setting the DF flag causes the string instructions to ***auto-decrement*** (to process strings from high addresses to low addresses). |
 |    | | | Clearing the DF flag causes the string instructions to ***auto-increment*** (process strings from low addresses to high addresses). |
 |    | | | The STD and CLD instructions set and clear the DF flag, respectively. |
