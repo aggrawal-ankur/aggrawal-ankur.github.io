@@ -560,17 +560,28 @@ The 32-bit `EFLAGS` register contains a group of status flags, a control flag, a
 | 12, 13 | (IOPL) I/0 Privilege Level | (S) System flag | Indicates the I/O privilege level of the currently running program or task. |
 |    | | | The current privilege level (CPL) of the currently running program or task must be less than or equal to the I/O privilege level to access the I/O address space. |
 |    | | | The `POPF` and `IRET` instructions can modify this field only when operating at a CPL of 0. |
+|    | | | The IOPL is also one of the mechanisms that controls the modification of the `IF` flag and the handling of interrupts in virtual-8086 mode when virtual mode extensions are in effect (when `CR4.VME = 1`). |
 | 14 | (NT) Nested Task | (S) System flag | Controls the chaining of interrupted and called tasks. |
 |    | | | Set when the current task is linked to the previously executed task; cleared when the current task is not linked to another task. |
+|    | | | The processor sets this flag on calls to a task initiated with a CALL instruction, an interrupt, or an exception. It examines and modifies this flag on returns from a task initiated with the `IRET` instruction. |
+|    | | | The flag can be explicitly set or cleared with the `POPF`/`POPFD` instructions. However, changing the state of this flag can generate unexpected exceptions in application programs. |
+|    | | | The processor doesn't set it in IA-32e mode, but it does allows software to set it. An `IRET` causes a `#GP` fault in IA-32e mode if the NT bit is set. |
 | 15 | Reserved |
-| 16 | (RF) Resume Flag | (S) System flag | Controls the processor's response to debug exceptions. |
+| 16 | (RF) Resume Flag | (S) System flag | Controls the processor's response to instruction-breakpoint conditions. |
+|    | | | When set, this flag temporarily disables debug exceptions (`#DB`) from being generated for instruction breakpoints (although other exception conditions can cause an exception to be generated); When clear, instruction breakpoints will generate debug exceptions. |
+|    | | | The primary function is to allow the restarting of an instruction following a `#DB` that was caused by an instruction breakpoint condition. The debug software must set this flag in the `EFLAGS` image on the stack just prior to returning to the interrupted program with `IRETD` (to prevent the instruction breakpoint from causing another debug exception). The processor then automatically clears this flag after the instruction returned to has been successfully executed, enabling instruction breakpoint faults again. |
 | 17 | (VM) Virtual 8086 Mode | (S) System flag | Set to enable virtual-8086 mode; clear to return to protected mode without virtual-8086 mode semantics. |
+|    | | | It can not be set in the IA-32e mode. Attempts to set the bit are ignored. |
 | 18 | (AC) Alignment Check/Access Control | (S) System flag | If the `CR0.AM` bit is set, alignment checking of user-mode data accesses is enabled iff this flag (AC) is 1. |
+|    | | | An alignment-check exception is generated when reference is made to an unaligned operand, such as a word at an odd byte address. It can be used to check the alignment of data. It is useful when exchanging data with processors which require all data to be aligned. |
+|    | | | The `#AC` exception can also be used by interpreters to flag some pointers as special by misaligning the pointer. This eliminates the overhead of checking each pointer and only handles the special pointer when used. |
+|    | | | `#AC` exceptions are generated only in user mode (privilege level 3). Memory references that default to privilege level 0, such as segment descriptor loads, do not generate this exception even when caused by instructions executed in user-mode. |
 |    | | | If the `CR4.SMAP` bit is set, explicit supervisor-mode data accesses to user-mode pages are allowed iff this bit (AC) is 1. |
-| 19 | (VIF) Virtual Interrupt Flag | (S) System flag | Virtual image of the IF flag. Used in conjunction with the VIP flag. |
-|    | | | To use this flag and the VIP flag, the virtual mode extensions are enabled by setting the `CR4.VME` bit. |
-| 20 | (VIP) Virtual Interrupt Pending | (S) System flag | Set to indicate that an interrupt is pending; clear when no interrupt is pending. |
+| 19 | (VIF) Virtual Interrupt Flag | (S) System flag | Contains a virtual image of the `IF` flag. Used in conjunction with the VIP flag. |
+|    | | | The processor recognizes the `VIF` flag only when either the `CR4.VME` or the `CR4.PVI` flag is set and the `IOPL` is less than 3. |
+| 20 | (VIP) Virtual Interrupt Pending | (S) System flag | Set to indicate that an interrupt is pending; clear when no interrupt is pending. It is used in conjunction with the `VIF` flag. |
 |    | | | Software sets and clears this flag; the processor only reads it. Used in conjunction with the VIF flag. |
+|    | | | The processor recognizes the `VIF` flag only when either the `CR4.VME` or the `CR4.PVI` flag is set and the `IOPL` is less than 3. |
 | 21 | (ID) ID Flag | (S) System flag | The ability of a program to set or clear this flag indicates support for the CPUID instruction. | 
 | 31:22 | Reserved |
 

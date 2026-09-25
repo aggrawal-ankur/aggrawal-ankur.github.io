@@ -202,3 +202,71 @@ The `IA32_EFER` MSR provides several fields related to IA-32e mode enabling and 
 ---
 
 ### System Flags and Fields in the EFLAGS Register
+
+Discussed in volume 1
+
+---
+
+## Memory Management Registers
+
+The processor provides four memory-management registers (`GDTR`, `LDTR`, `IDTR`, and `TR`) that specify the locations of the data structures which control segmented memory management. Special instructions are provided for loading and storing these registers.
+
+### Global Descriptor Table Register (GDTR)
+
+The `GDTR` register holds the base address (32 bits in protected mode; 64 bits in IA-32e mode) and the 16-bit table limit for the GDT.
+  - The base address specifies the linear address of byte 0 of the GDT.
+  - The table limit specifies the number of bytes in the table.
+
+The `LGDT` and `SGDT` instructions load and store the `GDTR` register, respectively.
+
+On power up or reset of the processor, the base address is set to the default value of 0 and the limit is set to `0x0FFFF`. A new base address must be loaded into the `GDTR` as part of the processor initialization process for protected-mode operation.
+
+---
+
+### Local Descriptor Table Register (LDTR)
+
+The `LDTR` register holds the 16-bit segment selector, base address (32 bits in protected mode; 64 bits in IA-32e mode), segment limit, and descriptor attributes for the LDT.
+  - The base address specifies the linear address of byte 0 of the LDT segment.
+  - The segment limit specifies the number of bytes in the segment.
+
+The `LLDT` and `SLDT` instructions load and store the segment selector part of the `LDTR` register, respectively. The segment that contains the LDT must have a segment descriptor in the GDT.
+
+When the `LLDT` instruction loads a segment selector in the LDTR: the base address, limit, and descriptor attributes from the LDT descriptor are automatically loaded in the LDTR.
+
+When a task switch occurs, the `LDTR` is automatically loaded with the segment selector and descriptor for the LDT for the new task. The contents of the `LDTR` are not automatically saved prior to writing the new LDT information into the register.
+
+On power up or reset of the processor, the segment selector and base address are set to the default value of 0 and the limit is set to `0x0FFFF`.
+
+---
+
+### Interrupt Descriptor Table Register (IDTR)
+
+The `IDTR` register holds the base address (32 bits in protected mode; 64 bits in IA-32e mode) and 16-bit table limit for the IDT.
+  - The base address specifies the linear address of byte 0 of the IDT.
+  - The table limit specifies the number of bytes in the table.
+
+The `LIDT` and `SIDT` instructions load and store the `IDTR` register, respectively.
+
+On power up or reset of the processor, the base address is set to the default value of 0 and the limit is set to `0x0FFFF`. The base address and limit in the register can then be changed as part of the processor initialization process.
+
+---
+
+### Task Register (TR)
+
+The task register holds the 16-bit segment selector, base address (32 bits in protected mode; 64 bits in IA-32e mode), segment limit, and descriptor attributes for the `TSS` of the current task.
+
+  - The selector references the TSS descriptor in the GDT.
+  - The base address specifies the linear address of byte 0 of the TSS.
+  - The segment limit specifies the number of bytes in the TSS.
+
+The `LTR` and `STR` instructions load and store the segment selector part of the task register, respectively.
+
+When the `LTR` instruction loads a segment selector in the task register, the base address, limit, and descriptor attributes from the TSS descriptor are automatically loaded into the task register.
+
+On power up or reset of the processor, the base address is set to the default value of 0 and the limit is set to `xFFFF`.
+
+When a task switch occurs, the task register is automatically loaded with the segment selector and descriptor for the `TSS` for the new task. The contents of the task register are not automatically saved prior to writing the new `TSS` information into the register.
+
+---
+
+## Control Registers
