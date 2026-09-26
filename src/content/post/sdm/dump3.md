@@ -668,3 +668,145 @@ A segment descriptor is a data structure in a GDT or LDT that provides the proce
 Segment descriptors are typically created by compilers, linkers, loaders, or the operating system or executive, but not application programs.
 
 Below is a description of a segment descriptor's format.
+
+[MORE DETAILS]
+
+---
+
+## System Descriptor Types
+
+When the `S` (descriptor type) flag in a segment descriptor is clear, the descriptor type is a system descriptor. The processor recognizes the following types of system descriptors:
+
+  - Local descriptor-table (LDT) segment descriptor.
+  - Task-state segment (TSS) descriptor.
+  - Call-gate descriptor.
+  - Interrupt-gate descriptor.
+  - Trap-gate descriptor.
+  - Task-gate descriptor.
+
+These descriptor types fall into two categories: system-segment descriptors and gate descriptors.
+  - System-segment descriptors point to system segments (LDT and TSS segments).
+  - Gate descriptors are in themselves "gates", which hold pointers to procedure entry points in code segments (call, interrupt, and trap gates) or which hold segment selectors for TSS's (task gates).
+
+System descriptors in IA-32e mode are 16 bytes instead of 8 bytes.
+
+[MORE DETAILS]
+
+---
+
+### Segment Descriptor Tables
+
+A segment descriptor table is an array of segment descriptors. A descriptor table is variable in length and can contain up to 8192 (2<sup>13</sup>) 8-byte descriptors. There are two kinds of descriptor tables:
+
+  - The global descriptor table (GDT)
+  - The local descriptor tables (LDT)
+
+Each system must have one GDT defined, which may be used for all the programs and tasks in the system. Optionally, one or more LDTs can be defined. For example, an LDT can be defined for each separate task being run, or some or all tasks can share the same LDT.
+
+---
+
+The GDT is not a segment itself. It is a data structure in the linear address space. The base linear address and limit of the GDT must be loaded into the `GDTR` register.
+  - The base address of the GDT should be aligned on an eight-byte boundary to yield the best processor performance.
+  - The limit value for the GDT is expressed in bytes.
+  - As with segments, the limit value is added to the base address to get the address of the last valid byte. A limit value of 0 results in exactly one valid byte.
+  - Because segment descriptors are always 8 bytes long, the GDT limit should always be one less than an integral multiple of eight (that is, 8N – 1).
+
+The first descriptor in the GDT is not used by the processor. A segment selector to this "null descriptor" does not generate an exception when loaded into a data-segment register (`DS`, `ES`, `FS`, or `GS`), but it always generates a `#GP` when an attempt is made to access memory using the descriptor. By initializing the segment registers with this segment selector, accidental reference to unused segment registers can be guaranteed to generate an exception.
+
+---
+
+The LDT is located in a system segment of the LDT type. The GDT must contain a segment descriptor for the LDT segment. If the system supports multiple LDTs, each must have a separate segment selector and segment descriptor in the GDT. The segment descriptor for an LDT can be located anywhere in the GDT.
+
+An LDT is accessed with its segment selector. To eliminate address translations when accessing the LDT, the segment selector, base linear address, limit, and access rights of the LDT are stored in the LDTR register
+
+---
+
+When the `GDTR` register is stored using the `SGDT` instruction, a 48-bit "pseudo-descriptor" is stored in memory. To avoid alignment check faults in user mode (privilege level 3), the pseudo-descriptor should be located at an odd word address (that is, address MOD 4 is equal to 2). This causes the processor to store an aligned word, followed by an aligned doubleword.
+
+User-mode programs normally do not store pseudo-descriptors, but the possibility of generating an alignment check fault can be avoided by aligning pseudo-descriptors in this way. The same alignment should be used when storing the `IDTR` register using the `SIDT` instruction.
+
+When storing the `LDTR` or task register (using the `SLDT` or `STR` instruction, respectively), the pseudo-descriptor should be located at a doubleword address (that is, address MOD 4 is equal to 0).
+
+Pseudo-descriptor formats:
+```
+ | 32-bit Base Address | Limit |
+47                   16 15     0
+
+ | 64-bit Base Address | Limit |
+79                   16 15     0
+```
+
+---
+
+In IA-32e mode, a segment descriptor table can contain up to 8192 (2<sup>13</sup>) 8-byte descriptors. An entry in the segment descriptor table can be 8 bytes. System descriptors are expanded to 16 bytes (occupying the space of two entries).
+
+`GDTR` and `LDTR` registers are expanded to hold 64-bit base address. The corresponding pseudo-descriptor is 80 bits.
+
+The following system descriptors expand to 16 bytes:
+  - Call gate descriptors
+  - IDT gate descriptors
+  - LDT and TSS descriptors
+
+---
+
+# Chapter 4: Linear Address Pre-Processing
+
+"Protected-Mode Memory Management"‚ software accesses memory using logical addresses. The processor then uses segmentation, to generate linear addresses from logical addresses. Linear addresses are then translated to physical addresses using paging, if it is enabled. Otherwise, the logical addresses are treated as the effective address.
+
+In IA-32e mode (`IA32_EFER.LMA` is 1), linear addresses may undergo some pre-processing before being translated through paging. Some of this pre-processing is done only if enabled by software, but some occurs unconditionally. Specifically, linear addresses are subject to pre-processing in IA-32e mode as follows:
+
+***Linear-address-space separation (LASS)***
+  - Software enables LASS by setting the `CR4.LASS` bit. The processor enumerates support for LASS with `CPUID.07H.01H:EAX.LASS[6]`. If this bit is enumerated as 1, software can set `CR4.LASS`.
+  - When enabled, may limit the linear addresses that are accessible by software, generating faults for accesses out of range.
+
+***Linear-address masking (LAM)***
+  - Enabling of LAM is based on three different bits: `CR3.LAM_U48`, `CR3.LAM_U57`, and `CR4.LAM_SUP`. The processor enumerates support for LAM with `CPUID.07H.01H:EAX.LAM[26]`. If this bit is enumerated as 1, software can set `CR3.LAM_U48`, `CR3.LAM_U57`, and `CR4.LAM_SUP`.
+  - When enabled, masks certain linear-address bits.
+
+***Canonicality checking***: Paging does not translate all the 64 bits of a linear address.
+  - Each linear address must be canonical, meaning that the untranslated bits have a fixed value. Memory accesses using a non-canonical address generate faults.
+  - Canonicality checking is not enabled by software and is always performed in 64-bit mode.
+
+Both LASS and canonicality checking can generate faults. For any specific memory access, the two features generate the same fault. For that reason, the relative order of that checking is not defined and cannot be determined by software.
+
+---
+
+## Mode-Based Access and Linear-Address-Space Partioning
+
+Every access to a linear address is either a ***supervisor-mode access*** or a ***user-mode access***.
+
+For all instruction fetches and most data accesses, this distinction is determined by the current privilege level (CPL). Accesses made with CPL < 3 are supervisor-mode accesses, while accesses made while CPL = 3 are user-mode accesses.
+
+Some operations implicitly access system data structures with linear addresses. It is considered a supervisor-mode access regardless of the CPL. Such accesses include the following:
+  - accesses to the global descriptor table (GDT) or local descriptor table (LDT) to load a segment descriptor.
+  - accesses to the interrupt descriptor table (IDT) when delivering an interrupt or exception.
+  - accesses to the task-state segment (TSS) as part of a task switch or change of CPL, and
+  - accesses to a user posted-interrupt descriptor (UPID) during user-interrupt notification processing.
+
+  Such accesses are called ***implicit*** supervisor-mode accesses. Other accesses made while CPL < 3 are called ***explicit*** supervisor-mode accesses.
+
+---
+
+Some 64-bit operating systems partition the 64-bit linear-address space into a supervisor portion and a user portion. Specifically,
+  - the upper half of the linear-address space (comprising addresses in which bit 63 is 1) is used for supervisor instructions and data, and
+  - the lower half of the linear-address space (comprising addresses in which bit 63 is 0) is used for user instructions and data.
+
+The LASS and LAM features are designed for operating systems that establish such linear-address-space partitioning. However, the features are defined and may be used even if such partitioning is not in effect.
+
+---
+
+## Linear-Address-Space Separation (LASS)
+
+The access rights determined by paging are based on whether a linear address is a supervisor-mode address or a user-mode address.
+
+Paging provides protection by preventing user-mode access of supervisor-mode addresses. In addition, there are paging features that can prevent the supervisor-mode accessing user-mode addresses.
+
+These paging-based protections prevent malicious software from directly reading or writing memory inappropriately. However, they require the processor to traverse a hierarchy of paging structures in memory.  Unprivileged software may be able to use the timing information resulting from this traversal to determine details about the paging structures, the layout of supervisor memory, or its use by supervisor software.
+
+Linear-address-space separation (LASS) is an independent mechanism that can enforce mode-based protection without traversing the paging structures. Because LASS provides this protection as part of linear-address pre-processing, unprivileged software is denied paging-based timing information.
+
+An operating system can use LASS to provide protections corresponding to the mode-based paging protections if it has established the linear-address-space partitioning.
+
+The operation of LASS is also affected by the paging-mode bit `CR4.SMAP`, which enables supervisor-access prevention. LASS enforces the equivalent of supervisor-mode execution prevention regardless of the setting of `CR4.SMEP`.
+
+---
