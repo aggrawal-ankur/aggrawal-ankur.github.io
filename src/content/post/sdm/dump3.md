@@ -923,7 +923,3 @@ In 64-bit mode, the `RIP` register contains the linear address of the instructio
 This `#GP` is delivered as a fault, meaning that the return instruction pointer of the fault handler is the address of the faulting instruction and not the non-canonical address whose load was attempted.
 
 [MORE DETAILS]
-
----
-
-# Chapter 5: Paging
