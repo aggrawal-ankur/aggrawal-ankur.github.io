@@ -803,10 +803,127 @@ Paging provides protection by preventing user-mode access of supervisor-mode add
 
 These paging-based protections prevent malicious software from directly reading or writing memory inappropriately. However, they require the processor to traverse a hierarchy of paging structures in memory.  Unprivileged software may be able to use the timing information resulting from this traversal to determine details about the paging structures, the layout of supervisor memory, or its use by supervisor software.
 
-Linear-address-space separation (LASS) is an independent mechanism that can enforce mode-based protection without traversing the paging structures. Because LASS provides this protection as part of linear-address pre-processing, unprivileged software is denied paging-based timing information.
+Linear-address-space separation (LASS) is an independent mechanism that can enforce mode-based protection without traversing the paging structures. Because LASS provides this protection as part of linear-address pre-processing, unprivileged software is denied paging-based timing information. Violations of these protections are called ***LASS violations***.
 
 An operating system can use LASS to provide protections corresponding to the mode-based paging protections if it has established the linear-address-space partitioning.
 
 The operation of LASS is also affected by the paging-mode bit `CR4.SMAP`, which enables supervisor-access prevention. LASS enforces the equivalent of supervisor-mode execution prevention regardless of the setting of `CR4.SMEP`.
 
 ---
+
+### Operation of Linear-Address-Space Separation (LASS)
+
+It applies only in the IA-32e mode (`IA32_EFER.LMA` is 1) and only if `CR4.LASS` is 1.
+
+LASS violations typically result in faults. In most cases, an access causing a LASS violation results in a `#GP`. For stack accesses (those due to stack-oriented instructions, as well as accesses that implicitly or explicitly use the `SS` segment register), a stack fault `#SS` is generated. In either case, a null error
+code is produced.
+
+Some accesses are not subject to faults due to LASS violations.
+  - These include prefetches (e.g., those resulting from execution of one of the `PREFETCHh` instructions), executions of the `CLDEMOTE` instruction, and accesses resulting from the speculative fetch or execution of an instruction.
+  - Such an access may cause a LASS violation. If it does, the access is not performed but no fault occurs.
+
+Below is a list of LASS violations based on bit 63 of a linear address. In 32 bit (or 16 bit) linear addresses, the processor treats bit 63 as if it were 0, this includes accesses in compatibility mode.
+
+  - A user-mode data access causes a LASS violation if it would access a linear address of which bit 63 is 1.
+
+  - A supervisor-mode data access causes a LASS violation if it would access a linear address of which bit 63 is 0, supervisor-mode access protection is enabled, and either `RFLAGS.AC` is 0 or the access is an implicit supervisor-mode access.
+
+  - A user-mode instruction fetch causes a LASS violation if it would fetch an instruction using a linear address of which bit 63 is 1.
+
+  - A supervisor-mode instruction fetch causes a LASS violation if it accesses a linear address that has bit 63 as 0. Unlike paging, this behavior of LASS applies regardless of the setting of `CR4.SMEP`.
+
+---
+
+LASS for instruction fetches applies when the linear address in `RIP` is used to load an instruction from memory. Unlike canonicality checking, LASS does not apply to branch instructions that load `RIP`.
+
+A branch instruction can load `RIP` with an address that would violate LASS. Only when the address is used to fetch an instruction will a LASS violation occur, generating a `#GP`. The return instruction pointer of the `#GP` handler is the address that incurred the LASS violation.
+
+---
+
+## Linear-Address Masking (LAM)
+
+LAM modifies linear addresses before they are subjected to canonicality checking. Doing so allows untranslated linear-address bits to contain arbitrary values.
+
+In IA-32e mode, linear address have 64 bits and are translated either with 4-level paging, which translates the low 48 bits of each linear address, or with 5-level paging, which translates 57 bits. The upper linear-address bits are reserved by canonicality checking.
+
+LAM applies only to 64-bit linear addresses used for data accesses. It does not apply to addresses used for instruction fetches or to those being loaded into the `RIP` register (e.g., as targets of jump and call instructions).
+
+---
+
+Software usages that associate metadata with a pointer might benefit from being able to place metadata in the
+upper (untranslated) bits of the pointer itself.
+
+However, the canonicality enforcement mentioned earlier implies that software would have to mask the metadata bits in a pointer (making it canonical) before using it as a linear address to access memory.
+
+LAM allows software to use pointers with metadata without having to mask the metadata bits. With LAM enabled, the processor masks the metadata bits in a pointer before using it as a linear address to access memory.
+
+---
+
+The processor enumerates support for LAM with `CPUID.07H.01H:EAX.LAM[26]`.
+
+Enabling and configuration of LAM is controlled by the following control-register bits: `CR3.LAM_U48`, `CR3.LAM_U57`, and `CR4.LAM_SUP`.
+
+Like LASS, LAM was designed for operating systems that establish linear-address-space partitioning. Linear addresses that clear bit 63 are used for user memory, while those that set bit 63 are for supervisor memory. For LAM, the identification of an address as user or supervisor is based solely on the value of bit 63 and does not depend on the CPL.
+
+`CR3.LAM_U48` and `CR3.LAM_U57` enable and configure LAM for user addresses:
+  - If `CR3.LAM_U48` = `CR3.LAM_U57` = 0, LAM is not enabled for user addresses.
+  - If `CR3.LAM_U48` = 1 and `CR3.LAM_U57` = 0, LAM48 is enabled for user addresses (a LAM width of 15).
+  - If `CR3.LAM_U57` = 1, LAM57 is enabled for user addresses (a LAM width of 6). When this bit is set, `CR3.LAM_U48` is ignored.
+
+`CR4.LAM_SUP` enables and configures LAM for supervisor addresses:
+  - If `CR4.LAM_SUP` = 0, LAM is not enabled for supervisor addresses.
+  - If `CR4.LAM_SUP` = 1, LAM is enabled for supervisor addresses with a width determined by the paging mode.
+    - If 4-level paging is enabled, LAM48 is enabled for supervisor addresses (a LAM width of 15).
+    - If 5-level paging is enabled, LAM57 is enabled for supervisor addresses (a LAM width of 6).
+
+---
+
+When LAM is active, linear addresses used to access data are masked before they are subject to the canonicality checking. Specifically, LAM modifies a linear address by extending the value of one address bit (depending on the LAM width) over others:
+
+  - When LAM48 is enabled, the processor modifies each linear address to replace each of bits 62:48 with the value of bit 47.
+  - When LAM57 is enabled, each of the bits 62:57 is replaced by the value of bit 56.
+
+In most cases, the address bits in the masked positions are not used by address translation. However, if 5-level paging is active and LAM48 is enabled for user pointers, bit 47 of a user pointer is extended over bits 62:48 to form a linear address, and bits 56:48 are used by 5-level paging.
+
+Page faults report the faulting linear address in `CR2`. Because LAM masking applies before paging, the faulting linear address recorded in `CR2` reflects the result of that masking and does not contain any masked metadata.
+
+The `INVLPG`, `INVPCID`, and `INVVPID` instructions can be used to invalidate any translation lookaside buffer (TLB) entries for specified linear addresses. LAM does not apply to those addresses, although those addresses are subject to canonicality checking.
+
+---
+
+## Canonicality Checking
+
+A linear address is canonical if the untranslated bits are a sign-extension of the most significant translated bit. There are two types of canonicality
+
+A linear address is ***paging canonical*** if it is canonical for the current paging mode.
+  - A linear address is canonical for 4-level paging (48-bit canonical) if bits 63:47 of the address are identical.
+  - A linear address is canonical for 5-level paging (57-bit canonical) if bits 63:56 of the address are identical.
+
+A linear address is ***CPU canonical*** if it is canonical relative to the widest linear address supported by the processor. A linear address is 48-bit canonical if the processor supports only 4-level paging and 57-bit canonical if the processor supports 5-level paging.
+
+Unlike LASS and LAM, there is no control to enable canonicality checking. It always applies when 64-bit linear addresses are used.
+
+---
+
+An access to memory using a linear address is allowed only if the address is paging canonical; if it is not, a ***canonicality violation*** occurs.
+
+In most cases, an access causing a canonicality violation results in a `#GP`. For stack accesses (those due to stack-oriented instructions, as well as accesses that implicitly or explicitly use the `SS` segment register), a `#SS` is generated. In either case, a null error code is produced.
+
+When LAM is enabled, canonicality checking is performed after the masking of the linear address. This implies that the requirements of canonicality on an original (unmasked) linear address used to access data are effectively relaxed when LAM is enabled:
+  - With LAM48, bit 63 and bit 47 of the original linear address must be identical.
+  - With LAM57 and 4-level paging, bit 63 and bits 56:47 of the original linear address must be identical.
+  - With LAM57 and 5-level paging, bit 63 and bit 56 of the original linear address must be identical.
+
+While LAM applies only to data accesses, canonicality checking applies both data accesses and instruction fetches.
+
+---
+
+In 64-bit mode, the `RIP` register contains the linear address of the instruction pointer. Operations that load `RIP` check first whether the value to be loaded is paging canonical. If it is not, the operation does not modify `RIP` and instead causes a `#GP`.
+
+This `#GP` is delivered as a fault, meaning that the return instruction pointer of the fault handler is the address of the faulting instruction and not the non-canonical address whose load was attempted.
+
+[MORE DETAILS]
+
+---
+
+# Chapter 5: Paging
