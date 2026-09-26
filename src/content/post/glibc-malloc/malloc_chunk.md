@@ -674,6 +674,10 @@ Similarly, we have `mem2chunk`, which takes a pointer to the payload memory and 
 
 ---
 
+That's the entire reasoning behind (every field in) `malloc_chunk`.
+
+---
+
 # Dynamic Analysis
 
 It is a dense writing and everything discussed here is completely derived from the source.
@@ -685,5 +689,7 @@ All experiments target 64-bit GNU/Linux.
 ---
 
 If you have any suggestions, or something feels incorrect to you, please feel free to reach out to me. All words are welcomed.
+
+The discussion can be accessed on [LinkedIn](https://lnkd.in/p/gX_sy4rg).
 
 Thank you.
