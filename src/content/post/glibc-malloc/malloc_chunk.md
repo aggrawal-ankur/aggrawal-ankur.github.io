@@ -6,6 +6,20 @@ description: "This is an in-depth exploration of the malloc_chunk struct in mall
 tags: [ glibc-malloc ]
 ---
 
+# Notes For The Reader
+
+It was originally written and published by me during March 2026 - July 2026 in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/) repository. I have polished and published it here.
+
+The writing is specifically about the memory allocator in glibc-2.43 and everything is derived from the source.
+
+A Docker environment with experiments is provided to verify everything yourself.
+
+The experiments can be accessed in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
+
+All experiments target LP64 GNU/Linux.
+
+---
+
 The output of `malloc(n)` is a piece of virtual memory. However, the allocator attaches some metadata to it.
 
 This metadata is kept in a structure called `malloc_chunk`. It is normally hidden, as it sits right before the usable memory.
@@ -664,7 +678,7 @@ Similarly, we have `mem2chunk`, which takes a pointer to the payload memory and 
 
 It is a dense writing and everything discussed here is completely derived from the source.
 
-A Docker environment is provided so that you can verify things yourself, please checkout the experiments in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
+Don't forget to checkout the experiments in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
 
 All experiments target 64-bit GNU/Linux.
 
