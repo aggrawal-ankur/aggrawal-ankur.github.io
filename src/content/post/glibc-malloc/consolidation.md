@@ -8,7 +8,7 @@ tags: [ glibc-malloc ]
 
 ## Note For The Reader
 
-This writing was originally published in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition) repository of mine.
+This writing was originally published in the [*glibc-malloc-expedition*](https://github.com/aggrawal-ankur/glibc-malloc-expedition) repository of mine.
 
 I have polished it further and published here to keep all of my writings in one place.
 
@@ -179,3 +179,9 @@ Both the pathways have the `PREV_INUSE` bit set in both the fenceposts.
 It is understandable that the size of fencepost-1 is not fixed, so fencepost-2 must know its actual size.
 
 But `mchunk_prev_size` is valid only when the `PREV_INUSE` bit is clear. The main_arena acknowledges this, while the non-main arena sets the `mchunk_prev_size` of fencepost-2 with the size of fencepost-1.
+
+---
+
+If you have any suggestions, or something feels inaccurate (or incorrect), please feel at ease to connect with me. All words are welcomed.
+
+Thank you.

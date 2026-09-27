@@ -8,13 +8,13 @@ tags: [ glibc-malloc ]
 
 # Notes For The Reader
 
-It was originally written and published by me during March 2026 - July 2026 in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/) repository. I have polished and published it here.
+It was originally written and published by me during March 2026 - July 2026 in the [*glibc-malloc-expedition*](https://github.com/aggrawal-ankur/glibc-malloc-expedition/) repository. I have polished and published it here.
 
 The writing is specifically about the memory allocator in glibc-2.43 and everything is derived from the source.
 
 A Docker environment with experiments is provided to verify everything yourself.
 
-The experiments can be accessed in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
+The experiments can be accessed in the [*glibc-malloc-expedition*](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
 
 All experiments target LP64 GNU/Linux.
 
@@ -63,7 +63,7 @@ Let's start with the history of this layout and the annotation.
 
 # History
 
-`glibc` adopted `ptmalloc2` in v2.3, which is based on `dlmalloc@2.7.0`. We will use this repository on GitHub: [denizThatMenace/dlmalloc](https://github.com/denizThatMenace/dlmalloc).
+`glibc` adopted `ptmalloc2` in v2.3, which is based on `dlmalloc@2.7.0`. We will use this repository on GitHub: [*denizThatMenace/dlmalloc*](https://github.com/denizThatMenace/dlmalloc).
   - It claims to be a mirror from Professor Doug Lea's [homepage](https://gee.cs.oswego.edu/pub/misc/).
   - Also, an account named *DougLea* is in the contributors list.
 
@@ -110,8 +110,8 @@ Finally, a commit on *May 1, 2007* by *Ulrich Drepper* introduced the remaining 
       	we know won't fit in two places.
       	Inspired by a patch by Tomash Brechko <tomash.brechko@gmail.com>.
 ```
-  - [Official Sourceware Link](https://sourceware.org/git/?p=glibc.git;a=commit;h=7ecfbd386a340b52b6491f47fcf37f236cc5eaf1)
-  - [bminor's GitHub Mirror](https://github.com/bminor/glibc/commit/7ecfbd386a340b52b6491f47fcf37f236cc5eaf1)
+  - [*Official Sourceware Link*](https://sourceware.org/git/?p=glibc.git;a=commit;h=7ecfbd386a340b52b6491f47fcf37f236cc5eaf1)
+  - [*bminor's GitHub Mirror*](https://github.com/bminor/glibc/commit/7ecfbd386a340b52b6491f47fcf37f236cc5eaf1)
 
 ---
 
@@ -682,14 +682,14 @@ That's the entire reasoning behind (every field in) `malloc_chunk`.
 
 It is a dense writing and everything discussed here is completely derived from the source.
 
-Don't forget to checkout the experiments in the [glibc-malloc-expedition](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
+Don't forget to checkout the experiments in the [*glibc-malloc-expedition*](https://github.com/aggrawal-ankur/glibc-malloc-expedition/tree/main/dynamic-analysis/chunk) repository.
 
 All experiments target 64-bit GNU/Linux.
 
 ---
 
-If you have any suggestions, or something feels incorrect to you, please feel free to reach out to me. All words are welcomed.
+If you have any suggestions, or something feels inaccurate (or incorrect), please feel at ease to reach out to me. All words are welcomed.
 
-The discussion can be accessed on [LinkedIn](https://lnkd.in/p/gX_sy4rg).
+The discussion can be accessed on [*LinkedIn*](https://lnkd.in/p/gX_sy4rg).
 
 Thank you.

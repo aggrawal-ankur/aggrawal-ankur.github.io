@@ -635,7 +635,11 @@ They might be unusual or strange, but I'd like to explore them in future.
 
 ## Discussion
 
-The discussion related to this post can be accessed at [LinkedIn](https://lnkd.in/p/g36wpeJB)
+The discussion related to this post can be accessed at [*LinkedIn*](https://lnkd.in/p/g36wpeJB).
+
+If you have any suggestions, or something feels inaccurate (or incorrect), please feel at ease to connect with me. All words are welcomed.
+
+Thank you.
 
 # References
 
