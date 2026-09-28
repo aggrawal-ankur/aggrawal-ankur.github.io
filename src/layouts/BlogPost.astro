@@ -586,6 +586,8 @@ const giscusThemes = import.meta.env.PROD
 	}
 	/* expressive-code wrapper safety */
 	.post-article .expressive-code {
+		width: 614.833px;
+		max-width: 100%;
 		margin: 28px 0;
 	}
 
@@ -789,7 +791,7 @@ const giscusThemes = import.meta.env.PROD
 
 	.post-article table {
 		display: block;
-		width: 100%;
+		width: var(--reading-width);
 		max-width: 100%;
 		overflow-x: auto;
 		border-collapse: collapse;
@@ -810,6 +812,8 @@ const giscusThemes = import.meta.env.PROD
 	}
 
 	.post-article hr {
+		width: var(--reading-width);
+		max-width: 100%;
 		border: 0;
 		height: 1px;
 		background: var(--hairline);
