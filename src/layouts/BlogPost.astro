@@ -634,7 +634,7 @@ const giscusThemes = import.meta.env.PROD
 
 	.post-article ol {
 		margin: 0 0 28px;
-		padding-left: 22px;
+		padding-left: 30px;
 		max-width: var(--reading-width);
 	}
 	.post-article ol li {
@@ -642,7 +642,7 @@ const giscusThemes = import.meta.env.PROD
 		line-height: 1.7;
 		color: hsl(var(--theme-text));
 		margin-bottom: 10px;
-		padding-left: 6px;
+		padding-left: 4px;
 	}
 	.post-article ol li::marker {
 		color: hsl(var(--theme-accent));
@@ -656,6 +656,11 @@ const giscusThemes = import.meta.env.PROD
 	.post-article li > p {
 		margin: 0;
 		display: inline;
+	}
+
+	.post-article p:has(+ ul),
+	.post-article p:has(+ ol) {
+		margin-bottom: 10px;
 	}
 
 	.post-article blockquote {
