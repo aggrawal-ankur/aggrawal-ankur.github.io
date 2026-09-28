@@ -153,12 +153,15 @@ const avatarUrl = profile?.avatar ? absoluteUrl(profile.avatar, Astro.site) : un
 		margin-bottom: 0 !important;
 	}
 	.bio :global(table) {
+		display: block;
 		width: 100%;
 		max-width: 100%;
+		overflow-x: auto;
 		border-collapse: collapse;
 		margin: 28px 0;
 		font-size: 15.5px;
 		font-family: var(--font-sans);
+		white-space: no-wrap;
 	}
 	.bio :global(th),
 	.bio :global(td) {

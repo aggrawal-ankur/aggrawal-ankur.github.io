@@ -788,12 +788,15 @@ const giscusThemes = import.meta.env.PROD
 	}
 
 	.post-article table {
+		display: block;
 		width: 100%;
 		max-width: 100%;
+		overflow-x: auto;
 		border-collapse: collapse;
 		margin: 28px 0;
 		font-size: 15.5px;
 		font-family: var(--font-sans);
+		white-space: no-wrap;
 	}
 	.post-article th,
 	.post-article td {
