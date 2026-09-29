@@ -36,11 +36,12 @@ export const siteConfig: SiteConfig = {
 	// 	category: "General",
 	// 	categoryId: "...",
 	// },
+
 	// Uncomment to enable analytics. Both providers load via Partytown.
-	// analytics: {
-	// 	googleAnalyticsId: "G-XXXXXXX",
-	// 	goatcounterUrl: "https://your-handle.goatcounter.com/count",
-	// },
+	analytics: {
+		// googleAnalyticsId: "G-XXXXXXX",
+		goatcounterUrl: "https://aggarwal-ankur.goatcounter.com/count",
+	},
 };
 
 export const menuLinks: { path: string; title: string }[] = [
