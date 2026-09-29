@@ -336,7 +336,7 @@ Some of the bits in the control registers are reserved and must be written with 
 | Bit Position(s) | Name | Description |
 | --------------- | ---- | ----------- |
 | 2:0 | Reserved |
-| 3 | (`PWD`) Page-level Write-Through | Controls the memory type used to access the first paging structure of the current paging-structure hierarchy. |
+| 3 | (`PWT`) Page-level Write-Through | Controls the memory type used to access the first paging structure of the current paging-structure hierarchy. |
 | | | This bit is not used if paging is disabled, with PAE paging, or with 4-level paging or 5-level paging if `CR4.PCIDE` is set. |
 | 4 | (`PCD`) Page-level Cache Disable Bit | Controls the memory type used to access the first paging structure of the current paging-structure hierarchy. |
 | | | This bit is not used if paging is disabled, with PAE paging, or with 4-level paging or 5-level paging if `CR4.PCIDE` is set. |
