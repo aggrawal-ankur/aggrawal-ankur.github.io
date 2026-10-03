@@ -28,7 +28,6 @@ For example ~
 
 ---
 
-
 # Chapter 20: Input/Output
 
 In addition to transferring data to and from external memory, IA-32 processors can also transfer data to and from

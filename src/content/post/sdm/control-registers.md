@@ -13,42 +13,38 @@ There are 5 control registers named `CR0`, `CR1`, `CR2`, `CR3` and `CR4`. They a
 
 There is a sixth control register named `CR8` available in the IA-32e 64-bit mode only.
 
-| Control Register | Description |
-| ---------------- | ----------- |
-| `CR0` | Contains system control flags that control operating mode and states of the processor. |
-| `CR1` | Reserved. |
-| `CR2` | Contains the page-fault linear address (the linear address that caused a page fault). |
-| `CR3` | Contains the physical address of the base of the paging-structure hierarchy and four flags (`PWT`, `PCD`, `LAM_U57`, and `LAM_U48`). |
-| | When using the physical address extension (PAE), it contains the base address of the page-directory-pointer table. |
-| | With 4-level paging and 5-level paging, it contains the base address of the `PML4` and `PML5` tables, respectively. If PCIDs are enabled, CR3 has a different format. |
-| `CR4` | Contains a group of flags that enable several architectural extensions, and indicate operating system or executive support for specific processor capabilities. |
-| `CR8` | CR8 can be accessed only in 64-bit mode, but the value of the TPR blocks interrupts regardless of mode. |
+---
 
+The `MOV CRn` instructions are used to manipulate the register bits.
 
-The `MOV CRn` instructions are used to manipulate the register bits. In protected mode, the `MOV` instructions allow the control registers to be read or loaded at privilege level 0 only. Operand-size prefixes for these instructions are ignored.
+In protected mode, the `MOV` instructions allow the control registers to be read or loaded at privilege level 0 only. Operand-size prefixes for these instructions are ignored.
+
+---
 
 Some of the bits in the control registers are reserved and must be written with zeros.
-  - Attempting to set any reserved bits in CR0[31:0] is ignored. Attempting to set any reserved bits in CR0[63:32] results in a general-protection exception, #GP(0).
-  - Attempting to set any reserved bits in `CR4` results in a general-protection exception, #GP(0).
+  - Attempting to set any reserved bits in `CR0[31:0]` is ignored.
+  - Attempting to set any reserved bits in `CR0[63:32]` results in a `#GP(0)`.
+  - Attempting to set any reserved bits in `CR4` results in a `#GP(0)`.
   - All 64 bits of `CR2` are writable by software.
-  - Bits in `CR3` in the range `63:MAXPHYADDR` that are reserved must be zero. Attempting to set any of them results in #GP(0).
+  - Bits in `CR3` in the range `63:MAXPHYADDR` that are reserved must be zero. Attempting to set any of them results in a `#GP(0)`.
   - The `MOV CR2` instruction does not check that address written to `CR2` is canonical.
   - A 64-bit capable processor will retain the upper 32 bits of each control register when transitioning out of IA-32e mode.
-  - On a 64-bit capable processor, an execution of MOV to CR outside of 64-bit mode zeros the upper 32 bits of the control register.
+  - On a 64-bit capable processor, an execution of "MOV to CR" outside of 64-bit mode zeros the upper 32 bits of the control register.
 
-# CR0 Flags
+# CR0
+
+`CR0` consists of ***system control flags*** that control the operating mode and states of the processor.
 
 | Bit Position(s) | Name | Description |
 | --------------- | ---- | ----------- |
-| 0 | (`PE`) Protection Enable Bit. | Enables protected mode when set; enables real-address mode when clear. |
-| | | This flag does not enable paging directly. It only enables segment-level protection. To enable paging, both the `PE` and `PG` flags must be set. |
+| 0 | (`PE`) Protection Enable Bit. | Enables protected mode when set (1); other real-address mode. |
+| | | It does not enable paging directly. It only enables segment-level protection. To enable paging, both the `PE` and `PG` flags must be set. |
 | 1 | (`MP`) Monitor Coprocessor | Controls the interaction of the `WAIT` or `FWAIT` instruction with the TS flag. |
 | | | When set, a `WAIT` instruction generates a device-not-available exception (`#NM`) if the TS flag is also set. |
 | | | When clear, the `WAIT` instruction ignores the setting of the TS flag. |
 | 2 | (`EM`) Emulation Bit |
 | 3 | (`TS`) Task Switched Bit |
-| 4 | (`ET`) Extension Type | Reserved in the Pentium 4, Intel Xeon, P6 family, and Pentium processors. |
-| | | In the Pentium 4, Intel Xeon, and P6 family processors, this flag is hardcoded to 1. |
+| 4 | (`ET`) Extension Type | Reserved in the Pentium 4, Intel Xeon, and P6 family. It is hardcoded to 1. |
 | | | In the Intel386 and Intel486 processors, this flag indicates support of Intel 387 DX math coprocessor instructions when set. |
 | 5 | (`NE`) Numeric Error |
 | 15:6 | Reserved |
@@ -64,8 +60,17 @@ Some of the bits in the control registers are reserved and must be written with 
 | | | It has no effect if the `CR0.PE` bit is not set. Setting the PG bit when the PE bit is clear causes a `#GP`. |
 | | | On Intel 64 processors, enabling and disabling IA-32e mode also requires modifying this bit. |
 
+# CR1
 
-# CR3 Flags
+Reserved.
+
+# CR2
+
+`CR2` contains the linear address that caused a page fault.
+
+# CR3
+
+Contains the physical address of the base of the paging-structure hierarchy and four flags: `PWT`, `PCD`, `LAM_U57`, and `LAM_U48`.
 
 | Bit Position(s) | Name | Description |
 | --------------- | ---- | ----------- |
@@ -81,11 +86,13 @@ Some of the bits in the control registers are reserved and must be written with 
 | 63 | |
 
 
-# CR4 Flags
+# CR4
+
+`CR4` consists of a group of flags that enable several architectural extensions, and indicate operating system or executive support for specific processor capabilities.
 
 | Bit Position(s) | Name | Description |
 | --------------- | ---- | ----------- |
-| 0  | (`VME`) Virtual-8086 Mode Extensions | Enables interrupt- and exception-handling extensions in virtual-8086 mode when set; disables the extensions when clear. |
+| 0  | (`VME`) Virtual-8086 Mode Extensions | Enables interrupt and exception handling extensions in virtual-8086 mode when set; disables the extensions when clear. |
 | | | Use of the VME can improve the performance of virtual-8086 applications by eliminating the overhead of calling the virtual-8086 monitor to handle interrupts and exceptions that occur while executing an 8086 program and, instead, redirecting the interrupts and exceptions back to the 8086 program's handlers.
 | | | It also provides hardware support for a virtual interrupt flag (`VIF`) to improve the reliability of running 8086 programs in multi-tasking and multiple-processor environments. |
 | 1  | (`PVI`) Protected-Mode Virtual Interrupts | When set, enables hardware support for a virtual interrupt flag (`VIF`) in protected mode. When clear, disables the `VIF` flag in protected mode. |
@@ -136,7 +143,7 @@ Some of the bits in the control registers are reserved and must be written with 
 
 ---
 
-# CR8 Flags
+# CR8
 
 | Bit Position(s) | Description |
 | --------------- | ----------- |
