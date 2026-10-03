@@ -36,6 +36,28 @@ Global and local descriptor tables are expanded in 64-bit mode to support 64-bit
 
 # Data Segment (DS) Descriptor
 
+The following is a description of the data segment descriptor.
+
+| Bit Position(s) | Description |
+| --------------- | ----------- |
+| 15:0  | Bits 15:0 of the segment limit. |
+| 31:16 | Bits 15:0 of the segment's base address. |
+| 39:32 | Bits 23:16 of the segment's base address. |
+| 43:40 | Type Information. |
+| | Bit 40 is the accessed (A) bit. |
+| | Bit 41 is the writable (W) bit. |
+| | Bit 42 is the expansion direction (E) bit. |
+| | Bit 43 is reserved; must be 0. |
+| 44 | Reserved; Hardcoded to 1. |
+| 46:45 | (DPL) Descriptor Privilege Level |
+| 47 | Present Bit |
+| 51:48 | Bits 19:16 of the segment limit. |
+| 52 | Available to the system programmers. |
+| 53 | Reserved; must be 0. |
+| 54 | (B) |
+| 55 | (G) |
+| 63:56 | Bits 31:24 of the segment's base address. |
+
 ```
                                                              [     TYPE    ]
 [ BASE 31:24 ] [G] [B] [0] [AVL] [LIMIT 19:16] [P] [DPL] [1] [0] [E] [W] [A] [BASE 23:16]
