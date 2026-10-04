@@ -1,7 +1,13 @@
-# Chapter 23: 8086 Emulation
+---
+title: "Real-Address Mode Environment"
+publishDate: "2026-10-03"
+# updatedDate: "2026-M-D"
+description: "Real-Address Mode Environment"
+tags: [ intel-sdm ]
+draft: true
+---
 
-IA-32 processors (beginning with the Intel386 processor) provide two ways to execute new or legacy programs
-that are assembled and/or compiled to run on an Intel 8086 processor:
+IA-32 processors (beginning with the Intel386 processor) provide two ways to execute new or legacy programs that are assembled and/or compiled to run on an Intel 8086 processor:
   - Real-address mode.
   - Virtual-8086 mode.
 
@@ -13,64 +19,80 @@ In virtual-8086 mode, an 8086 program runs as a separate protected-mode task. Le
 
 Protected-mode multitasking permits multiple virtual-8086 mode tasks (with each task running a separate 8086 program) to be run on the processor along with other non-virtual-8086 mode tasks.
 
+***Note: This writing discusses only the real-address mode environment. Virtual 8086 mode is discussed separately.***
+
 # Real-Address Mode
 
-The IA-32 architecture’s real-address mode runs programs written for the Intel 8086, Intel 8088, Intel 80186, and Intel 80188 processors, or for the real-address mode of the Intel 286, Intel386, Intel486, Pentium, P6 family, Pentium 4, and Intel Xeon processors.
+The IA-32 architecture's real-address mode runs programs written for the Intel *8086*, *8088*, *80186*, and Intel *80188* processors, or for the real-address mode of the Intel286, Intel386, Intel486, Pentium, P6 family, Pentium 4, and Intel Xeon processors.
 
 The execution environment of the processor in real-address mode is designed to duplicate the execution environment of the Intel 8086 processor.
 
 To an 8086 program, a processor operating in real-address mode behaves like a high-speed 8086 processor. The following is a summary of the core features of the real-address mode execution environment as would be seen by a program written for the 8086.
 
-***The processor supports a nominal 1 MiB physical address space***.
-  - This address space is divided into segments, each of which can be up to 64 KiB in length.
-  - The base of a segment is specified with a 16-bit segment selector, which is shifted left by 4 bits to form a 20-bit offset from address 0 in the address space.
+"***The processor supports a nominal 1 MiB physical address space, which is divided into segments that can be up to 64 KiB in length.***"
+  - The base of a segment is specified with a 16-bit segment selector, which is shifted left by 4 bits (mul by 4) to form a 20-bit offset from address 0 in the address space.
   - An operand within a segment is addressed with a 16-bit offset from the base of the segment.
   - A physical address is thus formed by adding the offset to the 20-bit segment base.
 
-***All operands in "native 8086 code" are 8-bit or 16-bit values.*** Operand size override prefixes can be used to access 32-bit operands.
-
-***Eight 16-bit general-purpose registers are provided***.
-  - They are `AX`, `BX`, `CX`, `DX`, `SP`, `BP`, `SI`, and `DI`.
-  - The extended 32 bit registers (`EAX`, `EBX`, `ECX`, `EDX`, `ESP`, `EBP`, `ESI`, and `EDI`) are accessible to programs that explicitly perform a size override operation.
-
-***Four segment registers are provided***.
-  - They are `CS`, `DS`, `SS`, and `ES`. The `FS` and `GS` registers are accessible to programs that explicitly access them.
-  - The `CS` register contains the segment selector for the code segment; the DS and `ES` registers contain segment selectors for data segments; and the SS register contains the segment selector for the stack segment.
-
-The 8086 16-bit instruction pointer (IP) is mapped to the lower 16-bits of the EIP register. Note this register is a 32-bit register and unintentional address wrapping may occur.
-
-The 16-bit `FLAGS` register contains status and control flags. It is mapped to the 16 least significant bits of the 32-bit `EFLAGS` register.
+---
 
 All of the Intel 8086 instructions are supported.
 
-A single, 16-bit-wide stack is provided for handling procedure calls and invocations of interrupt and exception handlers.
+"***All operands in the "native 8086 code" are 8-bit or 16-bit values.***"
+
+---
+
+"***Eight 16-bit general-purpose registers are provided***." They are `AX`, `BX`, `CX`, `DX`, `SP`, `BP`, `SI`, and `DI`.
+
+"***Four segment registers are provided***." They are `CS`, `DS`, `SS`, and `ES`.
+  - The `CS` register contains the segment selector for the code segment.
+  - The `DS` and `ES` registers contain segment selectors for data segments.
+  - The `SS` register contains the segment selector for the stack segment.
+
+---
+
+"***The 8086 16-bit instruction pointer***" (`IP`) is mapped to the lower 16-bits of the `EIP` register. Note that it is a a 32-bit register and unintentional address wrapping may occur. What does that mean?
+
+The 16-bit `FLAGS` register contains "***status and control flags***". It is mapped to the 16 least significant bits of the 32-bit `EFLAGS` register.
+
+---
+
+"***A single, 16-bit-wide stack is provided for handling procedure calls and invocations of interrupt and exception handlers.***"
   - This stack is contained in the stack segment identified with the `SS` register.
   - The `SP` (stack pointer) register contains an offset into the stack segment. The stack grows down (toward lower segment offsets) from the stack pointer.
   - The `BP` (base pointer) register also contains an offset into the stack segment that can be used as a pointer to a parameter list.
-  - When a `CALL` instruction is executed, the processor pushes the current instruction pointer (the 16 least-significant bits of the `EIP` register and, on far calls, the current value of the `CS` register) onto the stack.
-  - On a return, initiated with a `RET` instruction, the processor pops the saved instruction pointer from the stack into the `EIP` register (and `CS` register on far returns).
-  - When an implicit call to an interrupt or exception handler is executed, the processor pushes the `EIP`, `CS`, and `EFLAGS` (low-order 16-bits only) registers onto the stack.
-  - On a return from an interrupt or exception handler, initiated with an `IRET` instruction, the processor pops the saved instruction pointer and `EFLAGS` image from the stack into the `EIP`, `CS`, and `EFLAGS` registers.
 
-A single interrupt table, called the "interrupt vector table" or "interrupt table," is provided for handling interrupts and exceptions.
+When a `CALL` instruction is executed, the processor pushes the current instruction pointer (the 16 least-significant bits of the `EIP` register and, on far calls, the current value of the `CS` register) onto the stack.
+
+On a return, initiated with a `RET` instruction, the processor pops the saved instruction pointer from the stack into the `EIP` register (and `CS` register on far returns).
+
+When an implicit call to an interrupt or exception handler is executed, the processor pushes the `EIP`, `CS`, and `EFLAGS` (low-order 16-bits only) registers onto the stack.
+
+On a return from an interrupt or exception handler, initiated with an `IRET` instruction, the processor pops the saved instruction pointer and `EFLAGS` image from the stack into the `EIP`, `CS`, and `EFLAGS` registers.
+
+---
+
+"***A single interrupt table, called the "interrupt vector table" or "interrupt table," is provided for handling interrupts and exceptions.***"
   - The interrupt table (which has 4-byte entries) takes the place of the interrupt descriptor table (IDT, with 8-byte entries) used when handling protected-mode interrupts and exceptions.
   - Interrupt and exception vector numbers provide an index to entries in the interrupt table. Each entry provides a pointer (called a "vector") to an interrupt or exception handling procedure.
   - It is possible for software to relocate the IDT by means of the `LIDT` instruction on IA-32 processors beginning with the Intel386 processor.
 
-The x87 FPU is active and available to execute x87 FPU instructions in real-address mode. Programs written to run on the Intel 8087 and Intel 287 math coprocessors can be run in real-address mode without modification.
+---
+
+"***The x87 FPU***" is active and available to execute x87 FPU instructions in real-address mode. Programs written to run on the Intel 8087 and Intel 287 math coprocessors can be run in real-address mode without modification.
 
 ---
 
-The following extensions to the Intel 8086 execution environment are available in the IA-32 architecture’s real-address mode. If backwards compatibility to Intel 286 and Intel 8086 processors is required, these features should not be used in new programs written to run in real-address mode.
+The following extensions to the Intel 8086 execution environment are available in the IA-32 architecture's real-address mode. If backwards compatibility to Intel 286 and Intel 8086 processors is required, these features should not be used in new programs written to run in real-address mode.
 
-  - Two additional segment registers (FS and GS) are available.
+  - Two additional segment registers (`FS` and `GS`) are available.
   - Many of the integer and system instructions that have been added to later IA-32 processors can be executed in real-address mode.
-  - The 32-bit operand prefix can be used in real-address mode programs to execute the 32-bit forms of instructions. This prefix also allows real-address mode programs to use the processor’s 32-bit general-purpose registers.
+  - The 32-bit operand prefix can be used in real-address mode programs to execute the 32-bit forms of instructions (and operands). This prefix also allows real-address mode programs to use the processor's 32-bit general-purpose registers.
   - The 32-bit address prefix can be used in real-address mode programs, allowing 32-bit offsets.
 
-## Address Translation
+# Address Translation
 
-In real-address mode, the processor does not interpret segment selectors as indexes into a descriptor table. Instead, it uses them directly to form linear addresses as the 8086 processor does.
+In real-address mode, the processor uses the segment selectors directly to form linear addresses just like the 8086 processor. It does not interpret segment selectors as indexes into a descriptor table (like GDT or LDT).
 
 It shifts the segment selector left by 4 bits to form a 20-bit base address (WHY?). An offset (into the segment) is added to the base address to create a linear address that maps directly to the physical address space.
 
@@ -82,7 +104,7 @@ Note that for IA-32 processors beginning with the Intel486 processor, the `A20M#
 
 The IA-32 processors beginning with the Intel386 processor can generate 32-bit offsets using an address override prefix. However, in real-address mode, the value of a 32-bit offset may not exceed `0xFFFF` without causing an exception.
 
-For full compatibility with Intel 286 real-address mode, pseudo-protection faults (interrupt 12 or 13) occur if a 32-bit offset is generated outside the range 0 through `0xFFFF`.
+For full compatibility with Intel 286 real-address mode, ***pseudo-protection faults*** (interrupt 12 or 13) occur if a 32-bit offset is generated outside the range 0 through `0xFFFF`.
 
 ---
 
@@ -176,11 +198,9 @@ The byte swap instruction (`BSWAP`).
 
 ---
 
-Execution of any of the other IA-32 architecture instructions (not given in the previous two lists) in real-address mode result in an invalid-opcode exception (#UD) being generated.
+***Execution of any of the other IA-32 architecture instructions (not given in the previous two lists) in real-address mode result in an invalid-opcode exception*** (`#UD`) ***being generated.***
 
----
-
-## Interrupt and Exception Handling
+# Interrupt and Exception Handling
 
 When operating in real-address mode, software must provide interrupt and exception-handling facilities that are separate from those provided in protected mode.
 
