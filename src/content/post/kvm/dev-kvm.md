@@ -13,7 +13,7 @@ This writing attempts to understand `/dev/kvm`.
 
 # Notes For The Reader
 
-Everything is grounded in Linux v7.2.12.
+Everything is grounded in Linux [v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12).
 
 This writing explores various components in the virtual file system (VFS) and the device management layer. However, this writing is not a guide about them. I have found these components necessary to understand `/dev/kvm`, hence I have explored them. Therefore, this text must not be considered suitable for understanding the VFS layer and device management layer in depth.
 
@@ -100,15 +100,65 @@ Let's understand the VFS layer.
 
 # Virtual File System (VFS)
 
+The Virtual File System (also known as the Virtual Filesystem Switch) is the software layer in the kernel that provides the filesystem interface to userspace programs. It also provides an abstraction within the kernel which allows different filesystem implementations to coexist.
+
+The purpose of a VFS is to allow client applications to access different types of concrete file systems in a uniform way.
+
+Each filesystem, as discussed, has different priorities and makes different tradeoffs to handle the same memory hardware. Therefore, their implementations vary. So, how to connect them in a unified interface?
+
+The VFS layer is a contract. The VFS layer defines some core functionalities of a filesystem, like read, write, etc. The VFS layer is not worried about how a specific filesystem implements them. It's a detail better kept to them. It only provides the contract, that a filesystem must allow readability and the VFS must be informed about the function that implements readability or opens the gates to it, rest the fs implementation does.
+
+This is how multiple different filesystems are able to exist without any chaos. They are implemented the way they are required to be. The VFS layer defines a contract and the fs-implementation are modeled into it. That's it.
+
+So, what is a file?
+
+## What Is A File?
+
+
+## Types of Files
+
+| Sr. | File Type | Symbol (`ls`) | Flag | Description |
+| --- | --------- | ------------- | ---- | ----------- |
+| 1 | Regular File | "-" | `S_IFREG` | or an ordinary file, contains data and can be read from or written to. |
+| | | | They come in different types. For example: text files (contains human-readable data), binary files (contains machine-readable data). |
+| 2 | Directory | "d" | `S_IFDIR` | or folders, are special files that contain references to other files or directories. |
+| 3 | Link File | "l" | `S_IFLNK` | is a file that points to another file or directory. There are two types of links: hard links and soft (or symbolic) links. |
+| 4 | Character Device File | "c" | `S_IFCHR` | are special files that represent devices capable of sending and receiving data character-by-character. |
+| | | | Keyboards and serial ports; /dev/null, /dev/tty, etc. |
+| 5 | Block Device File | "b" | `S_IFBLK` |
+| 6 | Pipe | "p" | `S_IFIFO` |
+| 7 | Socket | "s" | `S_IFSOCK` |
+
+Block devices, pipes, and sockets aren't relevant to this pursuit, so they are not discussed.
+
+## What is a directory file?
+
+## What is a link file?
+
+> a hard link is like preserving references to the file. If one reference is destroyed, the other one could be used. As long as there is a reference, the file will be accessible.
+> analogy of secret.
+> what happens if the target file of a symlink is destroyed and a new file with the same name is created but with different intentions? The kernel has ways to deal with it.
+
+---
+
 The structures relevant to this exploration are defined in four separate files.
 
 | Structures | Files |
 | ---------- | ----- |
-| `inode`, `inode_operations` | [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `file`, `file_operations` | [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `dentry` | [/root/include/linux/dcache.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
-| `cdev` | [/root/include/linux/cdev.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12) |
-| `miscdevice` | [/root/include/linux/miscdevice.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12) |
+| `inode` and `inode_operations` | [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| `file` and `file_operations` | [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| `dentry` | [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
+| `cdev` | [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12) |
+| `miscdevice` | [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12) |
+| `fdtable` and `files_struct` | [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
+
+## Index Nodes (or inode)
+
+Inode (or i-node) stands for index-node.
+
+---
+
+**Note: Only 16/56 members are relevant. The complete struct can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).**
 
 ```c
 struct inode {
@@ -156,8 +206,8 @@ struct inode {
   };
 };
 ```
-  - 16/56 members are relevant.
-	- The complete struct can be accessed at [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
+
+Below is a description of each field.
 
 | Field | Description |
 | :---- | :---------- |
@@ -175,6 +225,14 @@ struct inode {
 | `i_fop` | Pointer to the initial `struct file_operations`. For character devices, points to `def_chr_fops` to route the initial `open()` into the character device subsystem. |
 | `i_cdev` | Pointer to `struct cdev`. Cached in the union once the character device is resolved during open. |
 
+
+## An instance of an inode, i.e. a file
+
+It is an active instance of a file (or inode). 10 active instances means 10 `struct file` objects in memory, but the inode remains 1 only.
+
+---
+
+**Note: Only 8/19 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).**
 
 ```c
 struct file {
@@ -194,8 +252,8 @@ struct file {
   file_ref_t f_ref;
 };
 ```
-  - 8/19 members are relevant.
-	- The complete structure can be accessed at [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).
+
+Below is a description of each field.
 
 | Field | Description |
 | :---- | :---------- |
@@ -208,6 +266,16 @@ struct file {
 | `f_pos` | Current byte offset in the file. |
 | `f_ref` | Atomic reference counter tracking how many descriptors or tasks reference this `struct file`. The file and underlying driver state are destroyed only when `f_ref` drops to 0. |
 
+
+## File Operations
+
+The VFS provides standard, pre-built operation templates (def_chr_fops, simple_dir_operations, generic_ro_fops) so basic filesystems and devices don't have to reinvent the wheel.
+
+Whenever a specialized subsystem or driver (like ext4, btrfs, or kvm) takes control of an open file, its custom file_operations table (kvm_chardev_ops) replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel.
+
+
+
+**Note: Only 11/35 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).**
 
 ```c
 struct file_operations {
@@ -229,9 +297,10 @@ struct file_operations {
   int (*release) (struct inode *, struct file *);
 }
 ```
-  - 11/35 members are relevant.
-	- The complete structure can be accessed at [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).
 
+## Inode Operations
+
+**Note: Only 8/26 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1998).**
 
 ```c
 struct inode_operations {
@@ -245,9 +314,10 @@ struct inode_operations {
 	int (*getattr) (struct mnt_idmap *, const struct path *, struct kstat *, u32, unsigned int);
 }
 ```
-  - 8/26 members are relevant.
-	- The complete structure can be accessed at [/root/include/linux/fs.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1998).
 
+## An Entry In A Directory File
+
+**Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
 
 ```c
 struct dentry {
@@ -263,8 +333,8 @@ struct dentry {
   struct hlist_head d_children;
 };
 ```
-  - 5/16 members are relevant to us.
-	- The complete structure can be accessed at [/root/include/linux/dcache.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).
+
+Below is a description of each field.
 
 | Field | Description |
 | :---- | :---------- |
@@ -277,6 +347,10 @@ struct dentry {
 | | Only populated if this dentry is a directory. For a leaf device node like `/dev/kvm`, this list is empty. |
 
 
+## A Character Device
+
+**Note: No member omitted. The structure can be verified at [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
+
 ```c
 struct cdev {
   struct kobject kobj;
@@ -287,9 +361,11 @@ struct cdev {
   unsigned int count;
 };
 ```
-  - No member omitted.
-  - The structure can be verified at path := [/root/include/linux/cdev.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).
 
+
+## A Miscellaneous Device
+
+**Note: No member omitted. The structure can be verified at [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
 
 ```c
 struct miscdevice {
@@ -304,5 +380,127 @@ struct miscdevice {
   umode_t mode;
 };
 ```
-  - No member omitted.
-  - The structure can be verified at [/root/include/linux/miscdevice.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).
+
+
+## Directory Entry Cache (`dcache`)
+
+Also called the dentry cache.
+
+The VFS implements the open(), stat(), chmod(), and similar system calls. The pathname argument that is passed to them is used by the VFS to search through the directory entry cache. This provides a very fast look-up mechanism to translate a pathname (filename) into a specific dentry.
+
+Dentries live in RAM and are never saved to disc. They exist only for performance. But how they are formed? Similarly inodes.
+
+## A directory file
+
+A directory file associates inodes to filenames. The kernel has no special data structure to represent a directory.
+
+## What is a device?
+
+Normally, a "device" means physical hardware that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much borader in the kernel.
+
+A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel, called a driver.
+
+Physical Hardware Devices: A real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.
+
+CPU Silicon Capability Devices: Specialized hardware circuits and microcode built directly into the CPU processor die. For example, Intel's VT-x or random number generators.
+
+Pseudo Devices: Pure kernel software constructs that implement the device interface to provide OS services without any hardware behind them. For example, /dev/null, which discards all the data passed to it.
+
+## The identity of a device
+
+A normal file on an SSD is identified by its Inode Number.
+
+A device is identified by a 32-bit integer called dev_t, which is split into two numbers: (Major, Minor).
+
+```
+ 31                    20 19                               0
+┌────────────────────────┬──────────────────────────────────┐
+│   MAJOR NUMBER (12b)   │        MINOR NUMBER (20b)        │
+└────────────────────────┴──────────────────────────────────┘
+```
+
+The Major Number (Which Driver): Tells the kernel which driver handles this device.
+
+The Minor Number (Which Specific Instance): Tells that driver which specific instance or sub-device is being addressed.
+
+---
+
+Think of an IP address and a Port number:
+
+An IP address identifies the computer on a network.
+A Port number identifies which specific program on that computer gets the packet.
+In Linux device drivers, dev_t is the exact same concept
+
+## All open files in a process
+
+In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, opened files are managed on a per-process basis.
+
+The two structures used to achieve this are defined in `/root/include/linux/fdtable.h`.
+
+**Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
+
+```c
+#define BITS_PER_LONG   64   /* /root/include/asm-generic/bitsperlong.h */
+#define NR_OPEN_DEFAULT BITS_PER_LONG
+
+struct fdtable {
+  unsigned int max_fds;
+  struct file  __rcu **fd;
+  unsigned long *close_on_exec;
+  unsigned long *open_fds;
+};
+
+struct files_struct {
+  atomic_t count;
+  struct fdtable __rcu *fdt;
+  struct fdtable fdtab;
+  unsigned int next_fd;
+  unsigned long close_on_exec_init[1];
+  unsigned long open_fds_init[1];
+  struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+};
+```
+
+Below is a description of fields in both the structures.
+
+### `struct fdtable`
+
+| Field | Description |
+| :---- | :---------- |
+| `max_fds` | Current capacity of the file descriptor array (starts at 64, doubles dynamically if needed). |
+| `fd` | Pointer to the array of open `struct file *` pointers. The integer file descriptor serves as the direct array index into this table (`fd[index]`). |
+| `open_fds` | Bitmask tracking which integer descriptor numbers are currently open. Used to locate the lowest available unused integer index in `O(1)` time. |
+| `close_on_exec` | Bitmask tracking which file descriptors have the `O_CLOEXEC` flag set. The kernel inspects this during `execve()` to close descriptors automatically. |
+
+---
+
+### `struct files_struct`
+
+| Field | Description |
+| :---- | :---------- |
+| `count` | Reference counter tracking how many threads or processes share this file table. |
+| `fdt` | Pointer to the active `struct fdtable`. Initially points to the embedded `&fdtab`, but is redirected to dynamically allocated heap tables if the process exceeds 64 open files. |
+| `fdtab` | Embedded starter `struct fdtable` (capacity 64) to avoid dynamic heap allocation for common processes. |
+| `next_fd` | Cache hint tracking the lowest candidate integer index likely to be free, avoiding repeated linear scans from 0. |
+| `close_on_exec_init` | Embedded 64-bit starter storage backing the `fdtab.close_on_exec` bitmap. |
+| `open_fds_init` | Embedded 64-bit starter storage backing the `fdtab.open_fds` bitmap. |
+| `fd_array` | Embedded starter array of 64 `struct file *` pointers (`NR_OPEN_DEFAULT = 64`) backing `fdtab.fd`. |
+
+---
+
+So, basically, 
+```c
+fdtable.fd = files_struct.fd_array
+fdtable.open_fds = files_struct.open_fds_init
+fdtable.close_on_exec = files_struct.close_on_exec_init
+```
+
+The indirection here is crazy, but it is there for a reason.
+
+As said, `fd_array`, `open_fds_init`, `close_on_exec_init` are starter variables. A process might open more files than the starter variables could handle. In that case, a new fdtable is allocated dynamically, and `files_struct.fdt` is updated to point to the new fdtable. Consequently, new `fd_array`, `open_fds_init`, `close_on_exec_init` are also required and dynamically created. The kernel updates `files_struct.fd` to point to the new fdtable and the members of this struct are made to point to the 3 newly created variables. The older ones remain in the struct because individual struct elements can not be freed and removed. To achieve this, these "extra" pointers are required.
+
+It is also noticeable that close_on_exec_init and open_fds_init are declared as singleton arrays, instead of `unsigned long` variables. The previous reason is applicable to them as well. When these variables are allocated on heap, we get a pointer-to-variable, not the variable itself. When we assign it to the variables, we directly get its reference. If we declared them as normal variables, we have to do `fdtable.open_fds = &open_fds_init`. But thanks to array decay, we can just point it to the array and get a pointer.
+
+### What is a file descriptor?
+
+A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
