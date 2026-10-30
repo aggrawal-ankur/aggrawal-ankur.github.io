@@ -7,25 +7,33 @@ tags: [ linux-kvm ]
 draft: true
 ---
 
-A text about KVM is, kind of incomplete, if it doesn't mention `/dev/kvm`. Almost all elementary writings about KVM has `/dev/kvm` in them. But what is `/dev/kvm` exactly, beyond "***a character device***"?
+# Premise
 
-This writing attempts to understand `/dev/kvm`.
+A text about KVM is, kind of incomplete, if it doesn't mention `/dev/kvm`. Almost all elementary writings about KVM has `/dev/kvm` in them. But what is `/dev/kvm` exactly?
+
+Normally, an article defines `/dev/kvm` as a "character device file" and immediately proceeds to use it. The definition is not incorrect, but it is useful only to the people who understand what a character device file is.
+
+My situation is that I only know the terms "text files" and "binary files". I don't understand what does a file means to the Linux kernel, let alone knowing the three words that define `/dev/kvm`.
+
+This writing is an attempt to understand files in Linux so that I can understand `/dev/kvm` and move in my virtualization journey.
+
+I prefer long writings, instead of a series. This is a significant time, energy and attention investment for a reader. Therefore, below are some notes for you so that you can evaluate if this writing is worth your valuable resources. I request you to read it before moving on further.
 
 # Notes For The Reader
 
-Everything is grounded in [Linux v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12).
+1. I have used the [Linux v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12) as the reference for this exploration.
 
-This writing explores various components in the virtual file system (VFS) and the device management layer. However, this writing is not a guide about them.
+2. This writing explores various a variety of structures in the virtual file system (VFS) and the device management layer. However, this writing is not an exhaustive guide about them.
 
-I don't understand files and I have found these components necessary to understand files before I understand `/dev/kvm`, hence I have explored them. Therefore, this text must not be considered suitable for understanding the aforementioned concepts in depth.
+3. Many of the the data structures that are relevant to this discussion have a lot of fields in them. Many fields, however, were observed to have no relevance in this pursuit. Therefore, they are omitted from this text. The rest of the members follow the same ordering as in the original structure.
 
----
+4. The structures weren't formatted the way I need them when I explore something. Moreover, the comments in the structures weren't helpful always. Therefore, the structures were formatted to my liking and comments were entirely removed from them.
 
-Many of the the data structures that are relevant to this discussion have a lot of fields in them. Many fields, however, were observed to have no relevance in this pursuit.
+5. Steps 3 and 4 were taken to improve the signal. The code is not altered by any means. Formatting the source code and removing the comments doesn't change the implementation.
 
-The contents of the structures were not formatted the way I needed. Therefore, to improve the signal, I have removed all the comments from the structures and only the relevant fields in these structures are discussed here.
+6. For all the struct definitions, links to the official [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original definitions.
 
-For all the struct definitions, links to the [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original struct definitions.
+Let's start.
 
 # Where to start this exploration?
 
@@ -36,9 +44,27 @@ The most common usage of it is opening it with the `open()` syscall:
 int fd = open("/dev/kvm", O_RDWR);
 ```
 
-If we open the man page for the `open` syscall, we get the following description: "*open and possibly create a file*".
+This is the man page for the `open` syscall.
+```bash
+NAME
+       open, openat, creat - open and possibly create a file
 
-That means, "/dev/kvm" is a file. This matches what the articles say about it.
+SYNOPSIS
+       #include <fcntl.h>
+
+       int open(const char *pathname, int flags, ...
+                  /* mode_t mode */ );
+
+DESCRIPTION
+       The open() system call opens the file specified by pathname.  If the specified file does not exist, it may optionally (if O_CREAT is specified
+       in flags) be created by open().
+```
+
+> Note that it has more things to say and we will explore them as required.
+
+This description matches what the articles say about `/dev/kvm`.
+
+---
 
 When I use `ls` and `file`, I get the following output.
 ```bash
@@ -49,9 +75,7 @@ file /dev/kvm
 /dev/kvm: character special (10/232)
 ```
 
-The output of `file` supports the aforementioned definition of /dev/kvm. The `c` in the output of `ls` might denote a "character device". However, I am not familiar with this format of `ls`.
-
-For example, when I run `ls` on a markdown file, I get
+The output of `file` supports the aforementioned definition of `/dev/kvm`. However, I am not familiar with this format of `ls`. For example, when I run `ls` on a markdown file, I get
 ```bash
 $ ls -l dev-kvm.md
 -rw-rw-r-- 1 username username 8631 Oct 26 22:56 dev-kvm.md
@@ -59,15 +83,13 @@ $ ls -l dev-kvm.md
 
 Focus on the content between "username" and "Oct".
   - For the markdown file, it is 8631, the size of the file (in bytes).
-  - For /dev/kvm, it is `10, 232`. The output of `file` also have it, i.e. `(10/232)`.
+  - For `/dev/kvm`, it is `10, 232`. The output of `file` also have this, just in a different format, i.e. `(10/232)`.
 
-So, /dev/kvm is a special file, called a character device file. I have some questions.
-  - What is a file? What identifies as a file in Linux?
-  - What are the different types of files in Linux? How they are represented?
-
-Since I don't have answers to these questions, I will start with them.
+The `c` in the output of `ls` might denote a "character device".
 
 ---
+
+The description of `open()`, `ls` and `file`, all identify `/dev/kvm` as a character device file. This gives us another useful question, apart from "*what is a file*", which we already have. "*What are the different types of files in Linux?*"
 
 One of my principles is to clear the ground before I explore the thing I exactly came for. This is how I deal with FOMO.
 
@@ -521,7 +543,7 @@ It is also noticeable that close_on_exec_init and open_fds_init are declared as 
 
 A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
 
-
+The man page description of `open` has some stuff about it.
 
 
 
