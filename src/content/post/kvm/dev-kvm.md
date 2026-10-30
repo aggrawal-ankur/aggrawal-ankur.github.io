@@ -21,19 +21,25 @@ I prefer long writings, instead of a series. This is a significant time, energy 
 
 # Notes For The Reader
 
-1. I have used the [Linux v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12) as the reference for this exploration.
+1. I have used the [*Linux v7.2.12*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12) source tree as the reference for this exploration.
 
-2. This writing explores various a variety of structures in the virtual file system (VFS) and the device management layer. However, this writing is not an exhaustive guide about them.
+2. This writing explores various structures in the virtual file system (VFS). However, VFS is vast and this writing not an exhaustive guide about it.
 
 3. Many of the the data structures that are relevant to this discussion have a lot of fields in them. Many fields, however, were observed to have no relevance in this pursuit. Therefore, they are omitted from this text. The rest of the members follow the same ordering as in the original structure.
 
-4. The structures weren't formatted the way I need them when I explore something. Moreover, the comments in the structures weren't helpful always. Therefore, the structures were formatted to my liking and comments were entirely removed from them.
+4. Exploring the source is an exhaustive task. So I expect the code to be in a certain formatting style. Therefore, I have formatted the structures to my liking.
 
-5. Steps 3 and 4 were taken to improve the signal. The code is not altered by any means. Formatting the source code and removing the comments doesn't change the implementation.
+5. Structures in the kernel are observed to have two kinds of comments. 1) A huge block of multi-line comment explaining each member before the structure is defined, and 2) comments tied to specific members in a struct. Some comments were useful, others were not. I have removed the comments entirely.
 
-6. For all the struct definitions, links to the official [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original definitions.
+6. Steps 3, 4 and 5 were taken to improve the signal. Formatting the source code and removing the comments doesn't change the implementation. The code is not altered by any means.
 
-Let's start.
+7. For all the struct definitions, links to the official [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original definitions.
+
+8. This is purely an investigative work. I have used the source code to build this understanding and it is possible that my interpretation of certain details is not how the kernel authors/maintainers intend to perceive it. If my interpretation feels incorrect to you, I welcome you to share your perspective on it. I welcome your corrections.
+
+9. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
+
+"***Let's start this expedition.***"
 
 # Where to start this exploration?
 
@@ -60,7 +66,7 @@ DESCRIPTION
        in flags) be created by open().
 ```
 
-> Note that it has more things to say and we will explore them as required.
+> *It has more things to say and we will explore them as required.*
 
 This description matches what the articles say about `/dev/kvm`.
 
@@ -89,69 +95,117 @@ The `c` in the output of `ls` might denote a "character device".
 
 ---
 
-The description of `open()`, `ls` and `file`, all identify `/dev/kvm` as a character device file. This gives us another useful question, apart from "*what is a file*", which we already have. "*What are the different types of files in Linux?*"
+The description of `open()`, `ls` and `file`, all identify `/dev/kvm` as a character device file. This gives us another important question: "*what are the different types of files in Linux?*"
 
-One of my principles is to clear the ground before I explore the thing I exactly came for. This is how I deal with FOMO.
+We are taught to explore the definition of a thing, followed by its types. That strategy didn't worked here.
 
-Internet is filled with information, both shallow and deep. Modern systems are sophisticated and context is distributed across various components. My habit of asking questions increases the amount of FOMO I have to deal with.
+For me, files are basically code files (.c, .py, ....), images, executable binaries, or plain text files. From that standpoint, the definition of a file is already pretty clear. But when you look at the types of files, it doesn't take much before you realize the problem. They don't fit the definition we are aware of.
 
-"*What if I don't explore this and it was a prerequisites to understanding the thing I am here for?*" 
-  - This question haunts me.
-  - Instead of wasting time, energy and attention procrastinating, I rather prefer clearing the ground first. It feels like a waste of time, but it isn't, at least for me.
+To understand what a file really is, we have to start with the types of files.
+
+# Types of Files
+
+| Sr. | File Type | Symbol (`ls`) | Description |
+| --- | --------- | ------------- | ----------- |
+| 1 | Regular File | "-" | or an ordinary file, contains data and can be read from or written to. |
+| | | | They come in different types. For example: text files (contains human-readable data), binary files (contains machine-readable data). |
+| 2 | Directory | "d" | or folders, are special files that contain references to other files or directories. |
+| 3 | Link File | "l" | is a file that points to another file or directory. There are two types of links: hard links and soft (or symbolic) links. |
+| 4 | Character Device File | "c" | are special files that represent devices capable of sending and receiving data character-by-character. |
+| | | | Keyboards and serial ports; /dev/null, /dev/tty, etc. |
+| 5 | Block Device File | "b" |
+| 6 | Pipe | "p" |
+| 7 | Socket | "s" |
+
+
+> *This list is available on the internet as well and that's where I got it from.*
+> *"Block devices", "pipes", and "sockets" aren't relevant to this pursuit, so they are not discussed.*
+
+I am sure we don't have to understand the list to realize that "*a file is more than a blob of human-readable or machine-readable text*".
+
+This realization has costed me a lot of time, energy and attention. All the time, I was trying to understand files from that standpoint. Even when I realized the seriousness of the situation, I was still thinking in terms of that because I wasn't able to identify what was missing. This realization was the thing that was missing.
+
+Now that we have realized that a file is more than text or binary data, we can start exploring what a file is.
+
+# What is a file?
+
+If you don't purchase an Apple laptop, it is highly likely that you get a Windows one. Laptops with a "Linux-based distribution" out of the box are still not common.
+
+We can change the operating system of our laptop to a Linux-based distribution like Debian or Ubuntu, or other OS like FreeBSD. Does that change the underlying hardware? NO. The hardware is fixed, only the OS changes, that's why we have multiple operating systems.
+
+Inside the operating system, we have multiple components, each designed to do a specific thing. There are drivers, a memory management system, processes and so on. 
+
+It is obvious that we love ***choices***. However, not everything is swappable. For example, we can switch the OS, but not the memory management facility the chosen OS kernel provides.
 
 ---
 
-Before we ask what is a file, we need to understand how files are stored and accessed. While this sounds absurd, by my own definition, like how can I understand how files are stored before understanding what a file is in the first place. The problem is, these two things are intertwined, and this is one way to deal with it.
+There is a component called "***file system***". In simple words, a file system is designed to manage files. Because there are different types of files, there are different file systems for them.
 
-When we purchase a laptop, it comes with Microsoft Windows as the operating system (unless you get a Mac). But we can change that. We can download a Linux-based distribution, like Debian, flash it on a USB drive and boot from it. Similarly, we can use FreeBSD.
+For regular files, we have "***storage file systems***". There are different ways to manage the same storage hardware, each with certain priorities and trade-offs. Therefore, there are different storage file systems.
 
-While the hardware components are fixed, each OS decides how to manage them differently. Similarly, a hardware storage device is fixed. To use it, we need a software layer that communicates with it. This layer is called ***file system.***
+> *You can gloss over this [Wikipedia](https://en.wikipedia.org/wiki/File_system) article to get an idea of it, although it is not required.*
 
-Just like there are multiple operating systems, there are multiple file systems.
+Different file systems means the kernel must support them. But how?
 
-Just like operating systems have different methodologies of managing resources, so as a file system. There are multiple file systems because there are multiple ways to manage the same storage hardware. Each methodology prioritizes something over other.
+To manage this variety of filesystems, allow new ones to be created without havoc, and give userspace a single unified way to access any file, the Virtual File System (VFS) was created.
 
-In programming, we have data structures to organize data. For a given situation, it is possible to use both an array and a linked list. The choice is based on the problem we are trying to solve. Eventually, the data is stored in memory. But different methodologies allow us to organize data in different ways. Similarly, different filesystems organize and store data in different ways. In the end, the data gets stored on the hardware device, but how it was done, is what that is different.
+The VFS abstracts different file systems into one layer, allowing user space applications to call one single handler and the VFS determines what needs to be done.
 
-We have different file systems, like ext4, exFAT, NTFS, Btrfs, etc. Different file systems means the kernel must support them. But how? If the kernel created separate handlers, like `read_ext4_file`, `read_exfat_file`, etc, that would create a separate class of issues.
-> What exactly?
-
-Kernel deals with this by creating a unified interface, called the virtual file system (VFS). It abstracts different file systems into one layer, allowing user space applications to call one single handler. The VFS decides which filesystem specific handler needs to be called.
-
-Let's understand the VFS layer.
+Our next destination is the VFS.
 
 # Virtual File System (VFS)
 
-The Virtual File System (also known as the Virtual Filesystem Switch) is the software layer in the kernel that provides the filesystem interface to userspace programs. It also provides an abstraction within the kernel which allows different filesystem implementations to coexist.
+The virtual file system is best understood as a ***contract***.
 
-The purpose of a VFS is to allow client applications to access different types of concrete file systems in a uniform way.
+Filesystem implementations are different, for obvious reasons.
 
-Each filesystem, as discussed, has different priorities and makes different tradeoffs to handle the same memory hardware. Therefore, their implementations vary. So, how to connect them in a unified interface?
+For the kernel to manage different file systems, it defines what a file system is to the kernel. It defines the core "***feature set***" of a filesystem and the "***tradeoffs***" the kernel makes to bring this abstraction into existence.
 
-The VFS layer is a contract. The VFS layer defines some core functionalities of a filesystem, like read, write, etc. The VFS layer is not worried about how a specific filesystem implements them. It's a detail better kept to them. It only provides the contract, that a filesystem must allow readability and the VFS must be informed about the function that implements readability or opens the gates to it, rest the fs implementation does.
+The kernel defines the contract. If a problem could be modeled into that contract, the kernel can manage it as a "file".
 
-This is how multiple different filesystems are able to exist without any chaos. They are implemented the way they are required to be. The VFS layer defines a contract and the fs-implementation are modeled into it. That's it.
+The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled in the contract. For example, take `read()`. "ext4" might read a file differently, compared to "XFS". All they have to do is to provide the entrypoint for `read()` to the VFS.
+
+The next step is to understand what this "contract" looks like. 
+
+Below is the feature set provided by the VFS.
+
+| Sr. | Feature Set | Brief Contract Details | Kernel Structures |
+| :-- | :---------- | :--------------------- | :---------------- |
+| 1 | **The Entity**<br>*(Resource State & Metadata)* | Guarantees an independent, canonical identity for the resource that exists independently of active open sessions. | `struct inode`<br>`struct inode_operations` |
+| 2 | **The Gate**<br>*(Universal Access Control)* | Provides standard permission checks before access is granted. | `struct inode` |
+| 3 | **The Session**<br>*(Interaction State)* | Manages an active, stateful dialogue between a process and an entity. | `struct file` |
+| 4 | **The Userspace Token**<br>*(Process Isolation Handle)* | Decouples userspace from raw kernel memory addresses by handing back an opaque, process-local integer (`fd`). | `struct files_struct`<br>`struct fdtable` |
+| 5 | **The Grammar & Lifecycle**<br>*(Polymorphic Verbs & Cleanup)* | Defines uniform verbs (`read`, `write`, `ioctl`) that route dynamically to driver-specific function pointers. Guarantees deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. | `struct file_operations`<br>`struct dentry` |
+
+These are the tradeoffs the kernel makes to bring this abstraction into existence.
+
+"***Syscall & Indirection Latency***"
+  - Accessing a resource through a file forces a privilege boundary switch into the kernel, followed by multi-pointer dereference chains (fd $\to$ files_struct $\to$ struct file $\to$ struct inode $\to$ file_operations).
+  - This adds microsecond latency that makes the file abstraction unsuitable for atomic, nanosecond-level operations (like CPU locks or high-frequency timers).
+
+"***Kernel Memory Footprint***"
+  - Each open file is stateful and consumes non-pageable kernel RAM (struct file, fdtable slots, locks, position cursors).
+  - Managing hundreds of thousands of open descriptors imposes measurable memory overhead.
+
+"***Interface Mismatch***"
+  - The VFS grammar fundamentally assumes a linear byte stream (read/write).
+  - Resources that don't fit a stream of bytes (like virtualization engines or hardware accelerators) are forced to rely heavily on ioctl(), losing compile-time type safety and standard error contracts in favor of arbitrary integer commands and raw memory pointers.
+
+"***Process-Local Confinement***"
+  - A file descriptor is strictly local to the process that opened it.
+  - It cannot be directly shared across address spaces through global pointers, and each process remains constrained by strict descriptor limits, requiring deliberate kernel mechanisms to scale or pass access.
+
+"***Concurrency & Lock Contention***"
+  - Threads in a process share the exact same open file descriptions (struct file) rather than receiving separate copies.
+  - Because mutable state like the read/write cursor (f_pos) is shared, concurrent I/O operations from multiple threads on the same descriptor must synchronize behind kernel locks (f_pos_lock), causing lock contention and serializing operations that callers might expect to run in parallel.
+
+
+CONTINUE FROM HERE.
+
 
 So, what is a file?
 
 ## What Is A File?
-
-
-## Types of Files
-
-| Sr. | File Type | Symbol (`ls`) | Flag | Description |
-| --- | --------- | ------------- | ---- | ----------- |
-| 1 | Regular File | "-" | `S_IFREG` | or an ordinary file, contains data and can be read from or written to. |
-| | | | They come in different types. For example: text files (contains human-readable data), binary files (contains machine-readable data). |
-| 2 | Directory | "d" | `S_IFDIR` | or folders, are special files that contain references to other files or directories. |
-| 3 | Link File | "l" | `S_IFLNK` | is a file that points to another file or directory. There are two types of links: hard links and soft (or symbolic) links. |
-| 4 | Character Device File | "c" | `S_IFCHR` | are special files that represent devices capable of sending and receiving data character-by-character. |
-| | | | Keyboards and serial ports; /dev/null, /dev/tty, etc. |
-| 5 | Block Device File | "b" | `S_IFBLK` |
-| 6 | Pipe | "p" | `S_IFIFO` |
-| 7 | Socket | "s" | `S_IFSOCK` |
-
-Block devices, pipes, and sockets aren't relevant to this pursuit, so they are not discussed.
 
 ## What is a directory file?
 
