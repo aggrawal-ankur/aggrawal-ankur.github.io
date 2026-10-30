@@ -7,25 +7,25 @@ tags: [ linux-kvm ]
 draft: true
 ---
 
-A text about KVM is kind of incomplete if it doesn't mention `/dev/kvm`. Almost all elementary writings about KVM has `/dev/kvm` in them. But what is `/dev/kvm` exactly, beyond "***a character device***"?
+A text about KVM is, kind of incomplete, if it doesn't mention `/dev/kvm`. Almost all elementary writings about KVM has `/dev/kvm` in them. But what is `/dev/kvm` exactly, beyond "***a character device***"?
 
 This writing attempts to understand `/dev/kvm`.
 
 # Notes For The Reader
 
-Everything is grounded in Linux [v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12).
+Everything is grounded in [Linux v7.2.12](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=v7.2.12).
 
-This writing explores various components in the virtual file system (VFS) and the device management layer. However, this writing is not a guide about them. I have found these components necessary to understand `/dev/kvm`, hence I have explored them. Therefore, this text must not be considered suitable for understanding the VFS layer and device management layer in depth.
+This writing explores various components in the virtual file system (VFS) and the device management layer. However, this writing is not a guide about them.
+
+I don't understand files and I have found these components necessary to understand files before I understand `/dev/kvm`, hence I have explored them. Therefore, this text must not be considered suitable for understanding the aforementioned concepts in depth.
 
 ---
 
 Many of the the data structures that are relevant to this discussion have a lot of fields in them. Many fields, however, were observed to have no relevance in this pursuit.
 
-The contents of the structures were not formatted the way I needed, plus the uneven comments were also making it hard for me to understand them.
+The contents of the structures were not formatted the way I needed. Therefore, to improve the signal, I have removed all the comments from the structures and only the relevant fields in these structures are discussed here.
 
-Therefore, to improve signal, I have removed all the comments from the structures and only the relevant fields in these structures are discussed here.
-
-For all the struct definitions, links to the [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the complete struct definitions.
+For all the struct definitions, links to the [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original struct definitions.
 
 # Where to start this exploration?
 
@@ -274,7 +274,6 @@ The VFS provides standard, pre-built operation templates (def_chr_fops, simple_d
 Whenever a specialized subsystem or driver (like ext4, btrfs, or kvm) takes control of an open file, its custom file_operations table (kvm_chardev_ops) replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel.
 
 
-
 **Note: Only 11/35 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).**
 
 ```c
@@ -317,6 +316,8 @@ struct inode_operations {
 
 ## An Entry In A Directory File
 
+An entry in a directory file is represented by a dentry, which literally stands for "a directory entry".
+
 **Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
 
 ```c
@@ -329,7 +330,7 @@ struct dentry {
   };
 
   struct inode *d_inode;
-  union shortname_store d_shortname;
+  union  shortname_store d_shortname;
   struct hlist_head d_children;
 };
 ```
@@ -345,6 +346,21 @@ Below is a description of each field.
 | | If the filename is short (like `"kvm"`), the string is stored directly inside the dentry struct to avoid a separate heap allocation. |
 | `d_children` | Head of the linked list (`struct hlist_head`) containing all child dentries for a particular directory. |
 | | Only populated if this dentry is a directory. For a leaf device node like `/dev/kvm`, this list is empty. |
+
+
+All directories are files, so they have inodes.
+
+The concept of file (the entirety of it) inside a directory file is represented by a dentry.
+
+The inode has a filed called `i_mode` which determines the kind of a file. For a directory, it is `S_IFDIR`.
+
+The dentry of the inode corresponding to a directory file has a field called `d_children` which represents the head of a linked list whose nodes are the dentries of the files in that directory. 
+
+The d_parent in the dentries of these sub-files will point to the parent dentry.
+
+The `d_children` of a dentry is valid only when the i_mode of the inode associated with it is `S_IFDIR`, i.e. the dentry is for a directory file. For all other file types, it is `NULL`.
+
+***Note: How the kernel builds and manages them is a detail that is not relevant to this pursuit.***
 
 
 ## A Character Device
@@ -504,3 +520,14 @@ It is also noticeable that close_on_exec_init and open_fds_init are declared as 
 ### What is a file descriptor?
 
 A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
+
+
+
+
+
+
+# Conclusion
+
+The text feels more about files in general, rather than `/dev/kvm`. I am not sure how the trajectory would be different if I understood files previously.
+
+I tried searching for articles on the internet, specifically about files and devices, not `/dev/kvm`, so that I can understand the primitives that make `/dev/kvm`. However, I couldn't find anything.
