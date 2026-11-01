@@ -163,9 +163,9 @@ We have unpacked a lot of things, so here is a short recap.
   - The kernel provides a generic file system abstraction, called the VFS, to support this variety of file systems.
   - VFS is a contract and anything that can be modeled into it could be managed as a file by the kernel. The implementation of the file system remains unaffected.
 
-Now the question we have been waiting for ....
+So, what is a file?
 
-# What is a File?
+## What is a File?
 
 A contract template by itself is just a set of rules. It only comes into reality when an agreement is made.
 
@@ -190,7 +190,7 @@ A text file stored on a physical storage device is backed by it. How about repla
 
 That's how we get those weird looking files in the table above. For the Linux kernel, a file means a completely different thing than what we believe.
 
-# One Last Surprise
+## One Last Surprise
 
 We know that one file can be opened simultaneously at multiple places. For example, I can open it and write to it from the terminal using Helix (or Vim), or use a GUI editor like Mousepad, or use an IDE Like VS Code.
 
@@ -289,8 +289,12 @@ Below is a description of each field.
 | `i_fop` | Pointer to the initial `struct file_operations`. |
 | `i_cdev`<br>in the union | Pointer to `struct cdev`. Cached in the union once the character device is resolved during open. |
 
+When we open a file manager, we see names like "Desktop", "Documents", "Downloads", "plain.txt", etc, regardless of the type of file. But an inode doesn't seem to have a field that could store that name.
+> *If this thought has crossed your mind, hold it. It is explored soon.*
 
-# An instance of an inode, i.e. A file
+***Note: How inodes are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
+
+# An instance of an inode, i.e. A File
 
 10 active instances means 10 `struct file` objects in memory, but the inode remains 1 only.
 
@@ -328,6 +332,233 @@ Below is a description of each field.
 | `f_pos`   | Current byte offset in the file. Useful to regular files, directories and block devices. |
 | `f_ref`   | A file struct can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same file struct. This member counts those references. The file and underlying state is destroyed only when `f_ref` drops to 0. |
 
+
+# Directory Files
+
+The data blocks of a regular file consists of bytes, be it text or binary.
+
+The data blocks of a directory file contain an array of records mapping human strings to inode numbers. Therefore, "***a directory file is a file that associates human readable names to inodes***".
+
+The `i_mode` of an `inode` for a directory file is `S_IFDIR`.
+
+Every directory starts with at least two entries:
+  1. `"."`, which maps to the inode corresponding to the directory file itself.
+  2. `".."`, which maps to the inode of its parent directory file.
+
+We can verify this by creating an empty directory and listing its contents.
+```bash
+$ mkdir empty-dir
+$ ls -la empty-dir/
+
+total 8
+drwxrwxr-x 2 username username 4096 Nov  1 11:46 .
+drwxrwxr-x 8 username username 4096 Nov  1 11:46 ..
+```
+
+---
+
+Reading these entries from disk every single time we navigate a path would be very slow. Therefore, the kernel caches these directory entries in RAM using `struct dentry`.
+
+## An Entry In A Directory File
+
+An entry in a directory file is represented by a `dentry`, which literally stands for "directory entry".
+
+**Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
+
+```c
+struct dentry {
+  struct dentry *d_parent;
+
+  union {
+    struct qstr __d_name;
+    const struct qstr d_name;
+  };
+
+  struct inode *d_inode;
+  union  shortname_store d_shortname;
+  struct hlist_head d_children;
+};
+```
+
+Below is a description of each field.
+
+| Field | Description |
+| :---- | :---------- |
+| `d_name`   | The filename component of the entry. In `/path/to/a/file`, the `d_name` for the dentry representing `file` would be `"file"`. |
+| `d_inode`  | Pointer to the associated `struct inode`. |
+| `d_parent` | Pointer to the parent directory's dentry. |
+| | For the root directory `/`, it points to itself. |
+| | For `file` in `/path/to/a/file`, it points to the dentry of `a`. |
+| `d_shortname` | An inline character buffer union. |
+| | If the filename is short (like `"kvm"`), the string is stored directly inside the dentry struct to avoid a separate heap allocation. |
+| `d_children` | Head of the linked list containing all child dentries for a particular directory file. |
+| | Meaningful only if this dentry is for a directory file. For a leaf node like "kvm" in `/dev/kvm`, this list is empty. |
+
+A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you may have noticed that the function of `d_children` is that of a pointer, but it is declared like a structure.
+
+`struct hlist_head`, which is the type of `d_children`, is declared in [*/root/include/linux/types.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/types.h?h=v7.2.12#n208).
+```c
+struct hlist_node {
+  struct hlist_node *next, **pprev;
+};
+
+struct hlist_head {
+  struct hlist_node *first;
+};
+```
+
+You can notice that it is a pointer. But why this indirection? Honestly, it never felt important so I have never explored that in the first place. If you want, you can do so.
+
+***Note: How dentries are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
+
+
+# Why an inode lacks a filename?
+
+So far, we have noticed that inodes are unnamed and directory files are what that associate a human-readable name with an inode. Why this design? Why an inode doesn't have a name?
+
+I have some pointers, but they feel like the consequences of the design rather than the motivation behind it. Let's discuss them.
+
+## 1. Fixed size
+
+I want you to look at the full inode struct closely. It doesn't require extra knowledge to realize that all the fields in an inode have deterministic values.
+
+They can absolutely contain different values but all those values are confirmed to fit the container they are supposed to go in. In no situation a member can have a value it can't contain.
+
+This keeps the size of an inode fixed. A file name, on the other hand, is not fixed. We would have to use heap to allocate it on runtime.
+
+The counter argument to this is that we can use a sufficiently large buffer length to store the file name. This prevents heap allocation and this shouldn't be a problem as many structures have members that aren't always used, so they anyways waste memory. But we have to consult the kernel about the maximum length of file names, and if there is a fixed maximum length, then there is nothing bad in doing that.
+
+However, there is one problem in the counter argument. The generic structures that pay the cost of being generic, if the programmers allow that, there has to be a reason for that.
+
+Also, it is important to understand the benefit of have fixed size inodes. Please note that there can be multiple advantages of it, but I am only aware of the following.
+
+Because every inode is the exact same size, finding inode `#N` on storage requires zero searching or tree traversal. It is pure arithmetic:
+```c
+byte_offset = inode_table_base + (inode_number - 1) * sizeof(struct inode);
+```
+
+> *Valid inodes start at 1, that's why the formula subtracts 1 to adjust the math.*
+
+## 2. Multiple Names
+
+We know that a directory file maps human-readable names to inodes. Is it possible to map more than one name to the same inode? Yes, and that's the concept behind link files.
+
+A link file is a mechanism to create an alternate reference to __ without copying its contents.
+
+There are two kinds of links: "***hard links***" and "***soft links***". Soft links are also called symbol links or symlinks, in short.
+  - Mapping a human-readable name to an inode is what creating a hard link means.
+  - Mapping a human-readable name to a path is what creating a soft link means.
+
+Link files are conceptually equivalent to shallow copy in programming. For example, updating `y` in the snippet below updates `x` too, as they both point to the same underlying entity.
+```c
+#include <stdio.h>
+
+int main(void){
+  int  x = 4;
+  int* y = &x;
+  printf("x: %d\n", x);
+  printf("y: %d\n", *y);
+
+  *y = 8;
+  printf("x: %d\n", x);
+  printf("y: %d\n", *y);
+}
+```
+
+The `i_nlink` field in an inode stores the count of hard links to it. Therefore, a hard link is like preserving the pointer to an entity. As long as there is at least one hard link, the entity will be accessible. Deleting a hard link means decrementing `i_nlink`, just like creating one is incrementing it. When `i_nlink` becomes 0 and there is no active file description pointing to it, the inode and the state associated with it will be deleted.
+
+The main question is "***why we would like to create multiple names for the same inode***"! So far, I have not found an answer that I could understand. So, I have left it for now.
+
+---
+
+Soft links, on the other hand, are mapped to a path, instead of an inode. But how this is possible, as a dentry maps a name to an inode?
+
+When we create a soft link, we create a new inode and a new dentry. The name of the soft link maps to this freshly created inode and the data payload of this inode is the path to the target file. The `i_mode` of the inode of this soft link has the `S_IFLNK` bit set. The path is stored in the `i_link` field (last union) of the soft link's inode.
+
+If the inode corresponding to the target path is deleted, the soft link will be effectively broken. What if the same path is mapped in the future to some other inode? The symlink will start to work, but it is not intended to. How the kernel deals with this?
+
+Uses of both (populate later).
+
+---
+
+As we have seen, links have benefits. However, the stuff we have discussed here is not enough for me to determine if it is the motivation behind the separation.
+
+## 3. Other reasons, if any!
+
+# All open files in a process
+
+In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, opened files are managed on a per-process basis.
+
+The two structures used to achieve this are defined in `/root/include/linux/fdtable.h`.
+
+**Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
+
+```c
+#define BITS_PER_LONG   64   /* /root/include/asm-generic/bitsperlong.h */
+#define NR_OPEN_DEFAULT BITS_PER_LONG
+
+struct fdtable {
+  unsigned int max_fds;
+  struct file  __rcu **fd;
+  unsigned long *close_on_exec;
+  unsigned long *open_fds;
+};
+
+struct files_struct {
+  atomic_t count;
+  struct fdtable __rcu *fdt;
+  struct fdtable fdtab;
+  unsigned int next_fd;
+  unsigned long close_on_exec_init[1];
+  unsigned long open_fds_init[1];
+  struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+};
+```
+
+Below is a description of fields in both the structures.
+
+### `struct fdtable`
+
+| Field | Description |
+| :---- | :---------- |
+| `max_fds` | Current capacity of the file descriptor array (starts at 64, doubles dynamically if needed). |
+| `fd` | Pointer to the array of open `struct file *` pointers. The integer file descriptor serves as the direct array index into this table (`fd[index]`). |
+| `open_fds` | Bitmask tracking which integer descriptor numbers are currently open. Used to locate the lowest available unused integer index in `O(1)` time. |
+| `close_on_exec` | Bitmask tracking which file descriptors have the `O_CLOEXEC` flag set. The kernel inspects this during `execve()` to close descriptors automatically. |
+
+
+### `struct files_struct`
+
+| Field | Description |
+| :---- | :---------- |
+| `count` | Reference counter tracking how many threads or processes share this file table. |
+| `fdt` | Pointer to the active `struct fdtable`. Initially points to the embedded `&fdtab`, but is redirected to dynamically allocated heap tables if the process exceeds 64 open files. |
+| `fdtab` | Embedded starter `struct fdtable` (capacity 64) to avoid dynamic heap allocation for common processes. |
+| `next_fd` | Cache hint tracking the lowest candidate integer index likely to be free, avoiding repeated linear scans from 0. |
+| `close_on_exec_init` | Embedded 64-bit starter storage backing the `fdtab.close_on_exec` bitmap. |
+| `open_fds_init` | Embedded 64-bit starter storage backing the `fdtab.open_fds` bitmap. |
+| `fd_array` | Embedded starter array of 64 `struct file *` pointers (`NR_OPEN_DEFAULT = 64`) backing `fdtab.fd`. |
+
+---
+
+So, basically, 
+```c
+fdtable.fd = files_struct.fd_array
+fdtable.open_fds = files_struct.open_fds_init
+fdtable.close_on_exec = files_struct.close_on_exec_init
+```
+
+The indirection here is crazy, but it is there for a reason.
+
+As said, `fd_array`, `open_fds_init`, `close_on_exec_init` are starter variables. A process might open more files than the starter variables could handle. In that case, a new fdtable is allocated dynamically, and `files_struct.fdt` is updated to point to the new fdtable. Consequently, new `fd_array`, `open_fds_init`, `close_on_exec_init` are also required and dynamically created. The kernel updates `files_struct.fd` to point to the new fdtable and the members of this struct are made to point to the 3 newly created variables. The older ones remain in the struct because individual struct elements can not be freed and removed. To achieve this, these "extra" pointers are required.
+
+It is also noticeable that close_on_exec_init and open_fds_init are declared as singleton arrays, instead of `unsigned long` variables. The previous reason is applicable to them as well. When these variables are allocated on heap, we get a pointer-to-variable, not the variable itself. When we assign it to the variables, we directly get its reference. If we declared them as normal variables, we have to do `fdtable.open_fds = &open_fds_init`. But thanks to array decay, we can just point it to the array and get a pointer.
+
+### What is a file descriptor?
+
+A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
+
+The man page description of `open` has some stuff about it.
 
 # File Operations
 
@@ -375,103 +606,9 @@ struct inode_operations {
 }
 ```
 
-# An Entry In A Directory File
+# The Overall Picture
 
-An entry in a directory file is represented by a dentry, which literally stands for "a directory entry".
-
-**Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
-
-```c
-struct dentry {
-  struct dentry *d_parent;
-
-  union {
-    struct qstr __d_name;
-    const struct qstr d_name;
-  };
-
-  struct inode *d_inode;
-  union  shortname_store d_shortname;
-  struct hlist_head d_children;
-};
-```
-
-Below is a description of each field.
-
-| Field | Description |
-| :---- | :---------- |
-| `d_name`   | The filename component of the entry. |
-| `d_inode`  | Pointer to the associated `struct inode`. |
-| `d_parent` | Pointer to the parent directory's dentry. For the root directory `/`, it points to itself. |
-| `d_shortname` | An inline character buffer union. |
-| | If the filename is short (like `"kvm"`), the string is stored directly inside the dentry struct to avoid a separate heap allocation. |
-| `d_children` | Head of the linked list (`struct hlist_head`) containing all child dentries for a particular directory. |
-| | Only populated if this dentry is a directory. For a leaf device node like `/dev/kvm`, this list is empty. |
-
-
-All directories are files, so they have inodes.
-
-The concept of file (the entirety of it) inside a directory file is represented by a dentry.
-
-The inode has a filed called `i_mode` which determines the kind of a file. For a directory, it is `S_IFDIR`.
-
-The dentry of the inode corresponding to a directory file has a field called `d_children` which represents the head of a linked list whose nodes are the dentries of the files in that directory. 
-
-The d_parent in the dentries of these sub-files will point to the parent dentry.
-
-The `d_children` of a dentry is valid only when the i_mode of the inode associated with it is `S_IFDIR`, i.e. the dentry is for a directory file. For all other file types, it is `NULL`.
-
-***Note: How the kernel builds and manages them is a detail that is not relevant to this pursuit.***
-
-
-# A Character Device
-
-**Note: No member omitted. The structure can be verified at [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
-
-```c
-struct cdev {
-  struct kobject kobj;
-  struct module *owner;
-  const struct file_operations *ops;
-  struct list_head list;
-  dev_t dev;
-  unsigned int count;
-};
-```
-
-
-# A Miscellaneous Device
-
-**Note: No member omitted. The structure can be verified at [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
-
-```c
-struct miscdevice {
-  int minor;
-  const char *name;
-  const struct file_operations *fops;
-  struct list_head list;
-  struct device *parent;
-  struct device *this_device;
-  const struct attribute_group **groups;
-  const char *nodename;
-  umode_t mode;
-};
-```
-
-
-# Directory Entry Cache (`dcache`)
-
-Also called the dentry cache.
-
-The VFS implements the open(), stat(), chmod(), and similar system calls. The pathname argument that is passed to them is used by the VFS to search through the directory entry cache. This provides a very fast look-up mechanism to translate a pathname (filename) into a specific dentry.
-
-Dentries live in RAM and are never saved to disc. They exist only for performance. But how they are formed? Similarly inodes.
-
-## A directory file
-
-A directory file associates inodes to filenames. The kernel has no special data structure to represent a directory.
-
-## What is a device?
+# What is a device?
 
 Normally, a "device" means physical hardware that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much borader in the kernel.
 
@@ -508,81 +645,45 @@ An IP address identifies the computer on a network.
 A Port number identifies which specific program on that computer gets the packet.
 In Linux device drivers, dev_t is the exact same concept
 
-## All open files in a process
+## A Character Device
 
-In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, opened files are managed on a per-process basis.
-
-The two structures used to achieve this are defined in `/root/include/linux/fdtable.h`.
-
-**Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
+**Note: No member omitted. The structure can be verified at [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
 
 ```c
-#define BITS_PER_LONG   64   /* /root/include/asm-generic/bitsperlong.h */
-#define NR_OPEN_DEFAULT BITS_PER_LONG
-
-struct fdtable {
-  unsigned int max_fds;
-  struct file  __rcu **fd;
-  unsigned long *close_on_exec;
-  unsigned long *open_fds;
-};
-
-struct files_struct {
-  atomic_t count;
-  struct fdtable __rcu *fdt;
-  struct fdtable fdtab;
-  unsigned int next_fd;
-  unsigned long close_on_exec_init[1];
-  unsigned long open_fds_init[1];
-  struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+struct cdev {
+  struct kobject kobj;
+  struct module *owner;
+  const struct file_operations *ops;
+  struct list_head list;
+  dev_t dev;
+  unsigned int count;
 };
 ```
 
-Below is a description of fields in both the structures.
 
-### `struct fdtable`
+## A Miscellaneous Device
 
-| Field | Description |
-| :---- | :---------- |
-| `max_fds` | Current capacity of the file descriptor array (starts at 64, doubles dynamically if needed). |
-| `fd` | Pointer to the array of open `struct file *` pointers. The integer file descriptor serves as the direct array index into this table (`fd[index]`). |
-| `open_fds` | Bitmask tracking which integer descriptor numbers are currently open. Used to locate the lowest available unused integer index in `O(1)` time. |
-| `close_on_exec` | Bitmask tracking which file descriptors have the `O_CLOEXEC` flag set. The kernel inspects this during `execve()` to close descriptors automatically. |
+**Note: No member omitted. The structure can be verified at [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
 
----
-
-### `struct files_struct`
-
-| Field | Description |
-| :---- | :---------- |
-| `count` | Reference counter tracking how many threads or processes share this file table. |
-| `fdt` | Pointer to the active `struct fdtable`. Initially points to the embedded `&fdtab`, but is redirected to dynamically allocated heap tables if the process exceeds 64 open files. |
-| `fdtab` | Embedded starter `struct fdtable` (capacity 64) to avoid dynamic heap allocation for common processes. |
-| `next_fd` | Cache hint tracking the lowest candidate integer index likely to be free, avoiding repeated linear scans from 0. |
-| `close_on_exec_init` | Embedded 64-bit starter storage backing the `fdtab.close_on_exec` bitmap. |
-| `open_fds_init` | Embedded 64-bit starter storage backing the `fdtab.open_fds` bitmap. |
-| `fd_array` | Embedded starter array of 64 `struct file *` pointers (`NR_OPEN_DEFAULT = 64`) backing `fdtab.fd`. |
-
----
-
-So, basically, 
 ```c
-fdtable.fd = files_struct.fd_array
-fdtable.open_fds = files_struct.open_fds_init
-fdtable.close_on_exec = files_struct.close_on_exec_init
+struct miscdevice {
+  int minor;
+  const char *name;
+  const struct file_operations *fops;
+  struct list_head list;
+  struct device *parent;
+  struct device *this_device;
+  const struct attribute_group **groups;
+  const char *nodename;
+  umode_t mode;
+};
 ```
 
-The indirection here is crazy, but it is there for a reason.
 
-As said, `fd_array`, `open_fds_init`, `close_on_exec_init` are starter variables. A process might open more files than the starter variables could handle. In that case, a new fdtable is allocated dynamically, and `files_struct.fdt` is updated to point to the new fdtable. Consequently, new `fd_array`, `open_fds_init`, `close_on_exec_init` are also required and dynamically created. The kernel updates `files_struct.fd` to point to the new fdtable and the members of this struct are made to point to the 3 newly created variables. The older ones remain in the struct because individual struct elements can not be freed and removed. To achieve this, these "extra" pointers are required.
+---
 
-It is also noticeable that close_on_exec_init and open_fds_init are declared as singleton arrays, instead of `unsigned long` variables. The previous reason is applicable to them as well. When these variables are allocated on heap, we get a pointer-to-variable, not the variable itself. When we assign it to the variables, we directly get its reference. If we declared them as normal variables, we have to do `fdtable.open_fds = &open_fds_init`. But thanks to array decay, we can just point it to the array and get a pointer.
-
-### What is a file descriptor?
-
-A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
-
-The man page description of `open` has some stuff about it.
+A generic entry for operations structures, then go to specifics.
+struct dentry_operations
 
 
 ```c
@@ -592,18 +693,8 @@ struct path {
 };
 ```
 
-
 # Conclusion
 
 The text feels more about files in general, rather than `/dev/kvm`. I am not sure how the trajectory would be different if I understood files previously.
 
 I tried searching for articles on the internet, specifically about files and devices, not `/dev/kvm`, so that I can understand the primitives that make `/dev/kvm`. However, I couldn't find anything.
-
-
-# What is a directory file?
-
-# What is a link file?
-
-> a hard link is like preserving references to the file. If one reference is destroyed, the other one could be used. As long as there is a reference, the file will be accessible.
-> analogy of secret.
-> what happens if the target file of a symlink is destroyed and a new file with the same name is created but with different intentions? The kernel has ways to deal with it.
