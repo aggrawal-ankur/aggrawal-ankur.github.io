@@ -35,7 +35,7 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 6. Steps 3, 4 and 5 were taken to improve the signal. Formatting the source code and removing the comments doesn't change the implementation. The code is not altered by any means.
 
-7. For all the struct definitions, links to the official [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original definitions.
+7. For all the struct definitions, links to the official [*git.kernel.org*](https://git.kernel.org/) web interface are provided to access the original definitions. All links are accessible to the best of my knowledge. However, a `502 Bad Gateway` error is observed and it is automatically resolved on a refresh.
 
 8. This is purely an investigative work. I have used the source code to build this understanding and it is possible that my interpretation of certain details is not how the kernel authors/maintainers perceive it. If my interpretation feels incorrect, I welcome your perspective and corrections.
 
@@ -45,7 +45,7 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 I am taught to explore the definition of a thing, followed by its types. However, that strategy didn't worked here. The reason is the wide mismatch between what I think is a file and what it means to the Linux kernel. 
 
-To identify that gap, I have explored some questions and eventually, I have come to the realization that exploring the types of files in Linux is the real entrypoint to understand this gap and then files.
+To identify that gap, I have explored some questions and eventually, I have come to the realization that exploring the types of files in Linux is the real entrypoint to understand this gap. After that, we can think about files.
 
 Therefore, we will start from the types of files in Linux.
 
@@ -53,29 +53,33 @@ Therefore, we will start from the types of files in Linux.
 
 Briefly, there are seven types of files in Linux.
 
-| Sr. | File Type | Symbol (`ls`) | Description |
-| --- | --------- | ------------- | ----------- |
+| Sr. | File Type | Symbol | Description |
+| --- | --------- | ------ | ----------- |
 | 1 | Regular File | "-" | or an ordinary file, contains data and can be read from or written to. |
 | | | | They come in different types. For example: text files (contains human-readable data), binary files (contains machine-readable data). |
-| 2 | Directory | "d" | or folders, are special files that contain references to other files or directories. |
-| 3 | Link File | "l" | is a file that points to another file or directory. There are two types of links: hard links and soft (or symbolic) links. |
-| 4 | Character Device File | "c" | are special files that represent devices capable of sending and receiving data character-by-character. |
+| 2 | Directory File | "d" | or folders, are files that contain references to other files. |
+| 3 | Link File | "l" | is a file that points to another file. They come in two types: *hard links* and *soft links*. |
+| 4 | Character Device File | "c" | are files that represent devices capable of sending and receiving data character-by-character. |
 | | | | Keyboards and serial ports; /dev/null, /dev/tty, etc. |
 | 5 | Block Device File | "b" | represent devices that transfer data in fixed-size blocks (e.g., hard drives, SSDs). |
 | 6 | Pipe | "p" | is used for inter-process communication, streaming data from one process to another. |
 | 7 | Socket | "s" | is used for data exchange between processes, locally or over a network. |
 
-> *This list is available on the internet as well and that's where I have got it from.*
+CHANGE THE DEFINITION OF CHARACTER DEVICE FILES TO ACCOMMODATE THE FACT THAT KVM IS THAT AS WELL BUT NO CHARACTERS ARE INVOLVED THERE.
+
+> *The "symbol" attribute is used by `ls`.*
 > *"Block devices", "pipes", and "sockets" aren't relevant to this pursuit, so they are not discussed.*
 > *I am aware of the saying "everything is a file", however, it will not be explored here.*
 
-I am sure we don't have to understand the list to realize that "*a file is more than a blob of human-readable or machine-readable text*". This realization has costed me a lot of time, energy and attention. All the time, I was trying to understand files from that standpoint.
+The list is quite strange, is it? If reading that list gave you a lot of questions, with no sight of answers, it did its job.
+
+I am sure we don't have to understand the list to realize that "*a file is more than human-readable or machine-readable bytes*". This realization has costed me a lot of time, energy and attention. All the time, I was trying to understand files from that standpoint.
 
 Now that we have realized that a file is more than text or binary data, we can start exploring what a file is.
 
 # What is a file?
 
-The laptop market has two major players: MacOS and Windows-based laptops. Laptops with a Linux-based distribution out-of-the box aren't very common. But we can change the OS to a Linux-based distribution like Debian or Arch, or other OS like FreeBSD, without changing the hardware. This is possible because the hardware and OS are separate entities.
+The laptop market has two major players: "***MacOS***" and "***Windows***" laptops. Laptops with a Linux-based distribution out-of-the box aren't very common. But we can change the OS to a Linux-based distribution like Debian or Arch, or other OS like FreeBSD, without changing the hardware. ***This is possible because the hardware and OS are separate entities.***
 
 Inside an operating system, we have multiple components, each designed to do a specific thing. There are drivers, a memory management system, processes and so on. 
 
@@ -83,38 +87,38 @@ It is obvious that we love "***choices***". However, not everything is swappable
 
 ---
 
-There is a component called "***file system***". In simple words, a file system is designed to manage files. Because there are different types of files, there are different file systems for them.
+Among these components there is a component called "***filesystem***". In simple words, a filesystem is designed to manage files.
+> *Please note that this could be considered an over-simplification of the topic and I am aware of it*.
 
-We use "***storage file systems***" when we want our data to persist across reboots on non-volatile storage hardware like SSD or HDD.
+Because there are different types of files, there are different filesystems for them.
 
-There are different ways to manage the same storage hardware, each with different goals. Therefore, there are different storage file systems.
+A "***storage filesystem***" is used when we want our data to persist across reboots on non-volatile storage hardware like SSD or HDD.
+
+There are different ways to manage the same storage hardware, each with different goals. Therefore, there are different storage filesystems like ext4, xfs, btrfs, ntfs, and so on.
 
 > *You can gloss over this [Wikipedia](https://en.wikipedia.org/wiki/File_system) article to get an idea of it, although it is not required.*
 
-Different file systems means the kernel must support them. But how?
+Different filesystems means the kernel must support them. But how?
 
-To manage this variety of file systems, allow new ones to be created without havoc, and give userspace a single unified way to access files regardless of their type, the Virtual File System (VFS) was created.
+To manage this variety of filesystems, allow new ones to be created without disturbing anything, and give userspace a single unified way to access files regardless of their type, the Virtual File System (VFS) was created.
 
-The VFS abstracts different file systems into one layer, allowing user space applications to call unified handlers and the VFS determines what needs to be done.
+The VFS abstracts different filesystems into one layer, allowing user space applications to call unified handlers and the VFS determines what needs to be done.
 
 # Virtual File System (VFS)
 
-The kernel defines a general file system abstraction. It defines the core "***feature set***" of a file system and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
+The kernel defines a general filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
 
-The kernel defines it as a contract. If a "thing" can be modeled into that contract, the kernel can manage it as a "file".
+This abstraction is like a "***contract***". If a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
 
-File system implementations are different, for obvious reasons. The contract is defined such that it doesn't alter a file systems's implementation, only the entrypoints are modeled into the contract. For example, take `read()`. 
-  - "ext4" might read a file differently, compared to "XFS".
-  - All they have to do is to provide the function that does the job of reading a file to the VFS and the VFS maps it to `read()`, its generic interface.
+The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled into the contract. For example, take `read()`.
+  - This abstraction is designed to "***read a file***".
+  - Different filesystems organize data differently, so the mechanism of reading a file is supposed to vary too. All they have to do is to provide the function that does the job of "reading a file" to the VFS and the VFS maps it to its generic abstraction `read()`.
   - When a process opens a file and calls `read()` on it, the VFS identifies the details and routes the request to the relevant file system handler.
 
----
-
-The next step is to understand what this "contract" looks like.
-> *Please note that the details below are what I am able to identify.*
-> *It is possible that the VFS is more than this, but I can write about it only when I understand it, which is beyond this exploration.*
-
-Below is the feature set provided by the VFS.
+Therefore, VFS is best understood as a contract. The next step is to understand what this "contract" looks like.
+> *Please note that the details below are what I am able to identify. It is possible that the VFS is more than this, but I can write about it only when I understand it, and exploring any further details is beyond the scope of this exploration.*
+> 
+> *The details below are supposed to introduce you to the contract. They are explored in enough detail when the associated structures are introduced.*
 
 ## Feature Set
 
@@ -127,10 +131,7 @@ Below is the feature set provided by the VFS.
 | 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers are provided. | `struct file_operations`,<br>`struct dentry` |
 | | | Deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. |
 
-> *If the description of "entity" reads like "this is what a file is, isn't it?", I want you to hold it for a while.*
-> *There is a reason I have used the term "entity", instead of "file".*
-
-Below are the tradeoffs the kernel makes to bring this abstraction into existence. *Don't worry about the details; they are explained later.*
+> *If the description of "entity" reads like "this is what a file is, isn't it?", I want you to hold it for a while. There is a reason I have used the term "entity", instead of "file".*
 
 ## Trade-offs
 
@@ -158,78 +159,103 @@ Below are the tradeoffs the kernel makes to bring this abstraction into existenc
 
 We have unpacked a lot of things, so here is a short recap.
   - There are different types of files in Linux.
-  - Different file systems are required to manage different types of files. Moreover, there are different file systems solving the same problem differently.
-  - The OS kernel must support this variety of file systems.
-  - The kernel provides a generic file system abstraction, called the VFS, to support this variety of file systems.
-  - VFS is a contract and anything that can be modeled into it could be managed as a file by the kernel. The implementation of the file system remains unaffected.
+  - Different filesystems are required to manage different types of files. Moreover, there are different filesystems solving the same problem differently.
+  - The OS kernel must support this variety of filesystems.
+  - The kernel provides a generic file system abstraction, called the VFS, which is a contract and anything that can be modeled into it could be managed as a "file". The implementation of the filesystem remains unaffected.
 
-So, what is a file?
+So, what next? It's time to define files.
 
 ## What is a File?
 
-A contract template by itself is just a set of rules. It only comes into reality when an agreement is made.
+A contract template by itself is just a set of rules. It only comes into reality when an agreement is made, right?
 
 "***If the virtual file system is the contract, then a file is an active instance of that contract.***"
 
 As I have mentioned this already, a file to me was "text" or "binary". But from the perspective of the Linux kernel, it is more than that, and it is so for valid reasons.
 
-As humans, we can easily define a file. But how the kernel should implement it? It requires a lot of abstraction to manage bytes of data sitting on a hardware storage. That's why, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants userspace to believe. The abstraction was designed to conceal details from the userspace.
+As humans, we can easily define a file as "***bytes of data on a hardware storage***". But how the kernel should implement it?
+  - A set of abstraction are required to manage these "***bytes***".
+  - That's why, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants userspace to believe. The abstraction was designed to conceal details from the userspace.
 
-Therefore, to create a text file, we need more than just the text.
+Therefore, we need more than just the text to create a text file. We need "data" on the disk and the "metadata" that describes that "data" to facilitate operations on it.
 
 ---
 
-We have the storage hardware where the bytes eventually reside. We have some machinery around it to facilitate that. Notice what the abstraction has done. It has separated the machinery required to manage a file from what backs a file.
+We have the storage hardware where the bytes reside. We have some machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs a file.***" We have seen this before, but where?"***The separation between an OS and the hardware.***"
+  - A combination of hardware provides raw capabilities.
+  - An OS taps into them and provides an easy way to utilize them.
+  - Different OS tap on those capabilities and provide access to the same hardware resources in different ways with different goals in consideration.
 
-A text file stored on a physical storage device is backed by it. How about replacing that with something else?
+Think about it. A text file stored on a physical storage device is backed by it. How about replacing the backing with something else?
   - Replace hardware storage with a table of names and pointers, and we get a directory file.
   - Replace hardware storage with a character-stream hardware device (like a serial port or terminal), and we get a character device file.
-  - Replace hardware storage with the KVM kernel module, and we get `/dev/kvm`.
+  - Replace hardware storage with the KVM kernel module (which taps into the VMX capabilities of the hardware), and we get `/dev/kvm`.
   - Replace hardware storage with a ring buffer in RAM, and we get a pipe.
   - Replace hardware storage with a network interface card (NIC), and we get a socket.
 
-That's how we get those weird looking files in the table above. For the Linux kernel, a file means a completely different thing than what we believe.
+That's how we get those weird looking files. If an article talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
 
-## One Last Surprise
-
-We know that one file can be opened simultaneously at multiple places. For example, I can open it and write to it from the terminal using Helix (or Vim), or use a GUI editor like Mousepad, or use an IDE Like VS Code.
-
-It sounds trivial, but it is not. A lot of state is required to manage, along with concurrency management. So how the kernel makes that possible?
+It is noticeable that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the VFS. They merely provide the right base to understand the rest of the files. The "***replace X with Y, and we get FILE_TYPE_Z***" simplification was possible only after we have understood "***regular files***".
 
 ---
 
-Everything we have discussed about files so far is correct, except that the kernel associates these details with an "***inode***", instead of a file, and a file is an active instance of that ***inode***.
+So, what is a file? A file is an active instance of the VFS contract. The contract defines the properties and a file is a runtime instance of it.
 
-For the kernel, a file represents an active instance of an entity (or resource), present somewhere in the system, whether it is backed by a storage device, a hardware capability, or a software construct.
+While the picture reads complete, there is one piece that is missing.
 
-This is the reason why multiple places can open the same file and operate on it seamlessly.
+## One Last Surprise
 
-That's why the feature set table uses the term "***entity***", not "***file***".
+A file can be opened at multiple places simultaneously. If you have not tried it, you can try right now.
+
+Now think about it. We have one file and there are multiple active instances of it. Each instance has its own independent state. How the kernel makes that possible?
+
+So far, we have a resource that backs a file and some metadata about it. The third and the final component of a file is "***per-instance metadata***".
+
+Therefore, a file in Linux is made up of 3 components.
+  1. The resource backing the file.
+  2. The metadata about the resource.
+  3. The per-instance metadata.
+
+Now what is surprising here? In the Linux kernel's terminology, the metadata about the resource is called "***inode***", and the per-instance metadata is called "***file***".
+
+The terminology is the final boss here. For the kernel, a "***file***" is an instance of an "***inode***". But conceptually, per-instance metadata, inode and the resource backing them together makes a file.
+
+That's why the feature set table uses the term "***entity***", not "***file***". The terminology is honestly loose here, in my opinion.
 
 ---
 
 That's the core of the VFS. Everything else is a detail that we can choose to explore if we need it.
 
-As decided, block devices, pipes and sockets aren't relevant to this pursuit, so they are not discussed. Now we will move on to the details that does matter for us.
+> *As decided, block devices, pipes and sockets aren't relevant to this pursuit, so they are not discussed.*
+> *Now we will move on to the details that does matter to us.*
 
-Following are the structures relevant to this exploration.
+# Kernel Structures and their Location
+
+Following structures are relevant to this exploration.
 
 | Structures | Files |
 | ---------- | ----- |
-| `inode` and `inode_operations` | [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `file` and `file_operations` | [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `dentry` | [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
-| `cdev` | [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12) |
-| `miscdevice` | [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12) |
-| `fdtable` and `files_struct` | [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
+| `inode` and `inode_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| `file` and `file_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| `dentry` | [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
+| `cdev` | [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12) |
+| `miscdevice` | [*root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12) |
+| `fdtable` and `files_struct` | [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
 
-We will explore them one-by-one, along with the details specific to them. Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another. This creates an inherent circular dependency. We can not fully understand a struct until others are introduced.
+We will explore them one-by-one, along with the details specific to them.
+
+> *Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another. This creates an inherent circular dependency. We can not fully understand a struct until others are introduced. Therefore, if a field don't make sense, don't force it.*
 
 # Index Node (or inode)
 
 ***An inode is the kernel's master record for a single, distinct entity in a filesystem. It contains everything the OS needs to know about that entity, except its name.***
+> *We will talk about this quirk in sufficient detail later.*
+>
+> *For now, the struct definition.*
 
-Note: Only 16/56 members are relevant here. The complete struct can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
+Inodes are local to a filesystem. Therefore, the same inode number can exist in multiple filesystems. So, an inode number is not enough to identify an inode. We need to know the filesystem it belongs to as well. However, that detail is not required here so we will skip it.
+
+Note: Only 16/56 members are relevant here. The complete struct can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
 
 ```c
 struct inode {
@@ -287,18 +313,19 @@ Below is a description of each field.
 | `i_mtime_sec`, `i_mtime_nsec` | Timestamp of the last file content modification (seconds and nanoseconds). |
 | `i_ctime_sec`, `i_ctime_nsec` | Timestamp of the last inode status/metadata change (seconds and nanoseconds). |
 | `i_fop` | Pointer to the initial `struct file_operations`. |
-| `i_cdev`<br>in the union | Pointer to `struct cdev`. Cached in the union once the character device is resolved during open. |
+| `i_cdev`<br>in the last union | Pointer to `struct cdev`. Cached in the union once the character device is resolved during open. |
+| `i_link`<br>in the last union | Pointer to the target path string when the inode represents a symbolic link. |
 
-When we open a file manager, we see names like "Desktop", "Documents", "Downloads", "plain.txt", etc, regardless of the type of file. But an inode doesn't seem to have a field that could store that name.
-> *If this thought has crossed your mind, hold it. It is explored soon.*
 
-***Note: How inodes are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
+# An instance of an Inode
 
-# An instance of an inode, i.e. A File
+***A `struct file` represents an active, open session with an inode in memory.***
 
-10 active instances means 10 `struct file` objects in memory, but the inode remains 1 only.
+While the inode holds the permanent state of the entity, `struct file` holds the per-session state of whoever is currently interacting with it.
 
-**Note: Only 8/19 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).**
+If a "file" is opened 10 times, there will be 10 instances of `struct file` in memory, but the inode remains only 1.
+
+**Note: Only 8/19 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).**
 
 ```c
 struct file {
@@ -330,14 +357,14 @@ Below is a description of each field.
 | `f_flags` | Status and access flags passed from userspace to `open()` (e.g. `O_RDWR` and `O_CLOEXEC`). |
 | `f_path`  | Contains the `struct dentry*` and `struct vfsmount*` for this open file. |
 | `f_pos`   | Current byte offset in the file. Useful to regular files, directories and block devices. |
-| `f_ref`   | A file struct can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same file struct. This member counts those references. The file and underlying state is destroyed only when `f_ref` drops to 0. |
+| `f_ref`   | A file struct can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same file struct. This member counts those references. The `struct file` and underlying state is destroyed only when `f_ref` drops to 0. |
 
 
 # Directory Files
 
 The data blocks of a regular file consists of bytes, be it text or binary.
 
-The data blocks of a directory file contain an array of records mapping human strings to inode numbers. Therefore, "***a directory file is a file that associates human readable names to inodes***".
+The data blocks of a directory file contains an array of records mapping human strings to inode numbers. Therefore, "***a directory file is a file that associates human readable names to inodes***".
 
 The `i_mode` of an `inode` for a directory file is `S_IFDIR`.
 
@@ -363,7 +390,7 @@ Reading these entries from disk every single time we navigate a path would be ve
 
 An entry in a directory file is represented by a `dentry`, which literally stands for "directory entry".
 
-**Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*/root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
+**Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
 
 ```c
 struct dentry {
@@ -384,7 +411,7 @@ Below is a description of each field.
 
 | Field | Description |
 | :---- | :---------- |
-| `d_name`   | The filename component of the entry. In `/path/to/a/file`, the `d_name` for the dentry representing `file` would be `"file"`. |
+| `d_name`   | The filename component of the entry. In `/path/to/a/file`, the `d_name` for the dentry representing `file` would be `"file"`; for `to`, it will be `to`. |
 | `d_inode`  | Pointer to the associated `struct inode`. |
 | `d_parent` | Pointer to the parent directory's dentry. |
 | | For the root directory `/`, it points to itself. |
@@ -394,9 +421,15 @@ Below is a description of each field.
 | `d_children` | Head of the linked list containing all child dentries for a particular directory file. |
 | | Meaningful only if this dentry is for a directory file. For a leaf node like "kvm" in `/dev/kvm`, this list is empty. |
 
-A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you may have noticed that the function of `d_children` is that of a pointer, but it is declared like a structure.
+A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you may have noticed two things.
+  1. The function of `d_children` is that of a pointer, but it is declared like a structure.
+  2. How the kernel knows whether `d_name` or `d_shortname` points to the filename?
+   
+Let's talk about them.
 
-`struct hlist_head`, which is the type of `d_children`, is declared in [*/root/include/linux/types.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/types.h?h=v7.2.12#n208).
+---
+
+`struct hlist_head`, the type of `d_children`, is declared in [*root/include/linux/types.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/types.h?h=v7.2.12#n208).
 ```c
 struct hlist_node {
   struct hlist_node *next, **pprev;
@@ -407,49 +440,98 @@ struct hlist_head {
 };
 ```
 
-You can notice that it is a pointer. But why this indirection? Honestly, it never felt important so I have never explored that in the first place. If you want, you can do so.
+You can notice that it is a pointer. But why this indirection? Honestly, it never felt important so I have never explored it in the first place.
+
+---
+
+`struct qstr`, the type of `d_name`, is declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n49) as follows.
+```c
+struct qstr {
+  union { ... };
+  const unsigned char *name;
+};
+```
+> *The union doesn't concern us, so it is removed.*
+
+`struct shortname_store`, the type of `d_shortname`, is declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n84) as follows.
+```c
+union shortname_store {
+  unsigned char string[DNAME_INLINE_LEN];
+  unsigned long words[DNAME_INLINE_WORDS];
+};
+```
+
+If the filename is short enough, it is written into `d_shortname.string` and the kernel sets `d_name.name` to point to `d_shortname.string`. Otherwise, `d_name.name` points to a heap-allocated string.
+
+So, in either case, `dentry->d_name.name` points to the filename and the kernel need not to check it. Pretty impressive, huh?
+
+However, in case the kernel needs to know this detail, it can use the following function defined in [*root/fs/dcache.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/dcache.c?h=v7.2.12#n356).
+```c
+static inline 
+int dname_external(const struct dentry *dentry)
+{
+  return dentry->d_name.name != dentry->d_shortname.string;
+}
+```
+
+---
 
 ***Note: How dentries are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
 
 
 # Why an inode lacks a filename?
 
-So far, we have noticed that inodes are unnamed and directory files are what that associate a human-readable name with an inode. Why this design? Why an inode doesn't have a name?
+So far, we have learned that inodes are unnamed and directory files are what that associate a human-readable name with an inode. 
 
-I have some pointers, but they feel like the consequences of the design rather than the motivation behind it. Let's discuss them.
+Why this design was chosen? In my honest assessment, I don't have an answer. I have some pointers, but they feel like the consequences of the design rather than the motivation behind it.
+
+Before we discuss them, I want to clarify that this section might feel rougher than everything else in the writing, even after all the editorial work I am putting into it. This is because I am not settled with this answer, so the question is 100% unresolved for me, without any doubt.
+
+Here are those thoughts.
 
 ## 1. Fixed size
 
-I want you to look at the full inode struct closely. It doesn't require extra knowledge to realize that all the fields in an inode have deterministic values.
+I want you to look at the full definition of [`struct inode`](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762) closely.
 
-They can absolutely contain different values but all those values are confirmed to fit the container they are supposed to go in. In no situation a member can have a value it can't contain.
+It doesn't require extra knowledge to understand that all the fields in an inode have deterministic values. I am not saying "pre-defined" values. I am saying that whatever domain of values a member is supposed to contain, the container is confirmed to be able to contain them. There is no situation where a member could be asked to contain a value it couldn't contain.
 
-This keeps the size of an inode fixed. A file name, on the other hand, is not fixed. We would have to use heap to allocate it on runtime.
+"***This keeps the size of an inode fixed.***"
 
-The counter argument to this is that we can use a sufficiently large buffer length to store the file name. This prevents heap allocation and this shouldn't be a problem as many structures have members that aren't always used, so they anyways waste memory. But we have to consult the kernel about the maximum length of file names, and if there is a fixed maximum length, then there is nothing bad in doing that.
+A filename, on the other hand, is not fixed. We have to use heap to allocate it on runtime. A "file" can be renamed, and if the new length was more than what we have already, we have to reallocate the memory.
+> *We have the right to ask why this is a problem. However, I am not able to arrive on a convincing answer.*
+> 
+> *I understand that heap allocations are costlier than stack or static storage, I understand that this can involve performance penalties, but unless I can see them, I can't really internalize the issue.*
+> *I am sure that those who designed this have a reasoning for this, and if I am shown that, I will be able to understand why it is a problem.*
 
-However, there is one problem in the counter argument. The generic structures that pay the cost of being generic, if the programmers allow that, there has to be a reason for that.
+---
 
-Also, it is important to understand the benefit of have fixed size inodes. Please note that there can be multiple advantages of it, but I am only aware of the following.
+The counter argument to this is that we can use a sufficiently large buffer length. This prevents heap allocation. But how many bytes is sufficient? Does the kernel enforce a limit on filenames? Yes, 255 bytes. On ASCII, that means 255 characters.
 
-Because every inode is the exact same size, finding inode `#N` on storage requires zero searching or tree traversal. It is pure arithmetic:
+So the kernel imposes a limit, that makes it easier for us to define a large inline buffer, is it? This argument can be countered by the fact that huge filenames are rare occurrences, so an inline buffer this large will increase internal fragmentation and memory pressure, i.e. ***memory wastage***.
+> *I have explored the memory allocator in GLIBC myself and I am aware of this memory wastage. However, I have another argument and this one reveals that I don't really understand kernel or system programming even a bit, but I am OK with it.*
+>
+> *Although we have not discussed this yet, but there are kernel structures that are generic in nature, so it is possible that an instance of that structure doesn't use all its members, and thus wastes memory. Take `file_operations` for example. A lot of the fields are only relevant to files with read/write like capabilities. `/dev/kvm`, on the other hand, is mostly `ioctl` based. Doesn't this generalization wastes memory?*
+> "*If this is the case, then the argument against inline buffer is not very strong.*"
+
+Moving on, what is the benefit of fixed size inodes? Because every inode has the exact same size, finding inode `#N` on storage requires zero searching or tree traversal. It is pure arithmetic:
 ```c
-byte_offset = inode_table_base + (inode_number - 1) * sizeof(struct inode);
+byte_off = inode_table_base + (inode_number-1) * sizeof(struct inode);
 ```
-
 > *Valid inodes start at 1, that's why the formula subtracts 1 to adjust the math.*
 
-## 2. Multiple Names
+***NOTE: There can be other advantages, but I am able to understand this only.***
 
-We know that a directory file maps human-readable names to inodes. Is it possible to map more than one name to the same inode? Yes, and that's the concept behind link files.
+## 2. Multiple Names (Link Files)
 
-A link file is a mechanism to create an alternate reference to __ without copying its contents.
+We know that a directory file maps human-readable names to inodes. Is it possible to map more than one name to the same inode? Yes, and that's the concept behind "***link files***".
 
-There are two kinds of links: "***hard links***" and "***soft links***". Soft links are also called symbol links or symlinks, in short.
+***A link file is a mechanism to create an alternate reference to an existing file without copying its contents.***
+
+There are two kinds of links: "***hard links***" and "***soft links***". Soft links are also called symbolic links or symlinks, in short.
   - Mapping a human-readable name to an inode is what creating a hard link means.
   - Mapping a human-readable name to a path is what creating a soft link means.
 
-Link files are conceptually equivalent to shallow copy in programming. For example, updating `y` in the snippet below updates `x` too, as they both point to the same underlying entity.
+Link files are conceptually equivalent to shallow copy in programming. For example, updating `y` in the snippet below updates `x` too, as both of them point to the same entity.
 ```c
 #include <stdio.h>
 
@@ -465,36 +547,42 @@ int main(void){
 }
 ```
 
-The `i_nlink` field in an inode stores the count of hard links to it. Therefore, a hard link is like preserving the pointer to an entity. As long as there is at least one hard link, the entity will be accessible. Deleting a hard link means decrementing `i_nlink`, just like creating one is incrementing it. When `i_nlink` becomes 0 and there is no active file description pointing to it, the inode and the state associated with it will be deleted.
+The `i_nlink` field in an inode stores the count of hard links to it.
+  - Creating a hard link is like preserving the pointer of an entity. As long as there is at least one hard link, the entity will be accessible.
+  - Deleting a hard link means decrementing `i_nlink`, just like creating one is incrementing it.
+  - When `i_nlink` becomes 0 and there is no active file description pointing to the inode, the inode and the state associated with it will be deleted.
 
-The main question is "***why we would like to create multiple names for the same inode***"! So far, I have not found an answer that I could understand. So, I have left it for now.
+The main question is, "***why we would like to create multiple names for the same inode***"! The simplest use case of it is "***a shallow copy***".
+  - Suppose a file's permanent location is A, but we need to access it from location B as well without copying its content?
+  - All we have to do is to create a hard link to the file at location B. Now, both A and B point to the same inode.
 
 ---
 
 Soft links, on the other hand, are mapped to a path, instead of an inode. But how this is possible, as a dentry maps a name to an inode?
 
-When we create a soft link, we create a new inode and a new dentry. The name of the soft link maps to this freshly created inode and the data payload of this inode is the path to the target file. The `i_mode` of the inode of this soft link has the `S_IFLNK` bit set. The path is stored in the `i_link` field (last union) of the soft link's inode.
+A hard link only creates a new dentry, but a soft link creates an inode as well.
+  - The name of the soft link maps to this freshly created inode, and the data payload of this inode is the path to the target file.
+  - The `i_mode` of the inode of this soft link has the `S_IFLNK` bit set. The path is stored in the `i_link` field (the last union) of the soft link's inode.
 
-If the inode corresponding to the target path is deleted, the soft link will be effectively broken. What if the same path is mapped in the future to some other inode? The symlink will start to work, but it is not intended to. How the kernel deals with this?
-
-Uses of both (populate later).
+If the inode corresponding to the target path is deleted, or the dentry of the target path is deleted, the soft link will be effectively broken. What if the path is reinstated to a different inode? The symlink will start to work, but it is not intended to. How the kernel deals with this?
+  - The kernel does nothing. That's the design.
+  - A symlink only stores a raw text path. It doesn't care about the inode behind it.
+  - The genius of this design is used heavily in version switching. It's like creating a permalink for a resource whose destination is not fixed by design.
 
 ---
 
-As we have seen, links have benefits. However, the stuff we have discussed here is not enough for me to determine if it is the motivation behind the separation.
-
-## 3. Other reasons, if any!
+I leave this question to you.
 
 # All open files in a process
 
 In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, opened files are managed on a per-process basis.
 
-The two structures used to achieve this are defined in `/root/include/linux/fdtable.h`.
+The two structures used to achieve this are defined in `root/include/linux/fdtable.h`.
 
-**Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*/root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
+**Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
 
 ```c
-#define BITS_PER_LONG   64   /* /root/include/asm-generic/bitsperlong.h */
+#define BITS_PER_LONG   64   /* root/include/asm-generic/bitsperlong.h */
 #define NR_OPEN_DEFAULT BITS_PER_LONG
 
 struct fdtable {
@@ -566,7 +654,7 @@ The VFS provides standard, pre-built operation templates (def_chr_fops, simple_d
 
 Whenever a specialized subsystem or driver (like ext4, btrfs, or kvm) takes control of an open file, its custom file_operations table (kvm_chardev_ops) replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel.
 
-**Note: Only 11/35 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).**
+**Note: Only 11/35 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).**
 
 ```c
 struct file_operations {
@@ -591,7 +679,7 @@ struct file_operations {
 
 # Inode Operations
 
-**Note: Only 8/26 members are relevant. The complete structure can be accessed at [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1998).**
+**Note: Only 8/26 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1998).**
 
 ```c
 struct inode_operations {
@@ -647,7 +735,7 @@ In Linux device drivers, dev_t is the exact same concept
 
 ## A Character Device
 
-**Note: No member omitted. The structure can be verified at [*/root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
+**Note: No member omitted. The structure can be verified at [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
 
 ```c
 struct cdev {
@@ -663,7 +751,7 @@ struct cdev {
 
 ## A Miscellaneous Device
 
-**Note: No member omitted. The structure can be verified at [*/root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
+**Note: No member omitted. The structure can be verified at [*root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
 
 ```c
 struct miscdevice {
@@ -692,6 +780,8 @@ struct path {
   struct dentry   *dentry; // Which specific name/node in that filesystem?
 };
 ```
+
+anon_inode
 
 # Conclusion
 
