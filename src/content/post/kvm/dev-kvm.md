@@ -571,18 +571,17 @@ If the inode corresponding to the target path is deleted, or the dentry of the t
 
 ---
 
-I leave this question to you.
+Now, I leave this question to you.
 
 # All open files in a process
 
-In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, opened files are managed on a per-process basis.
-
-The two structures used to achieve this are defined in `root/include/linux/fdtable.h`.
+In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, the per-instance state is managed on a per-process basis.
 
 **Note: 4/6 and 7/11 members are relevant. The complete structs can be accessed at [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12#n24).**
 
 ```c
 #define BITS_PER_LONG   64   /* root/include/asm-generic/bitsperlong.h */
+
 #define NR_OPEN_DEFAULT BITS_PER_LONG
 
 struct fdtable {
@@ -603,50 +602,62 @@ struct files_struct {
 };
 ```
 
-Below is a description of fields in both the structures.
+Normally I like tables to explain struct fields. But the indirection here is absolutely crazy, which is why I am making an exception here. These structs are so simple yet so complex I simply don't know where to start from.
+> *Don't focus on `__rcu`, by the way.*
 
-### `struct fdtable`
+`fd_array` is a collection of `struct file*` pointers, where each pointer correspond to an open file description.
+  - Since it is an array, each pointer has an index. This index is what that is returned to the userspace by the name "***file descriptor***".
+  - Whenever a process performs an operation using this integer, let's say `read()`, this integer is used to find the `struct file` instance corresponding to it, i.e. `files_struct->fd_array[fd]` and things continue afterwards.
+  - This array is initialized with `NR_OPEN_DEFAULT` entries, i.e. 64. This prevents an immediate heap allocation. Normally, processes don't use these many file descriptors, but if a process ends up opening more than 64 files, what happens? Wait.
 
-| Field | Description |
-| :---- | :---------- |
-| `max_fds` | Current capacity of the file descriptor array (starts at 64, doubles dynamically if needed). |
-| `fd` | Pointer to the array of open `struct file *` pointers. The integer file descriptor serves as the direct array index into this table (`fd[index]`). |
-| `open_fds` | Bitmask tracking which integer descriptor numbers are currently open. Used to locate the lowest available unused integer index in `O(1)` time. |
-| `close_on_exec` | Bitmask tracking which file descriptors have the `O_CLOEXEC` flag set. The kernel inspects this during `execve()` to close descriptors automatically. |
+`close_on_exec_init[1]` is a bitmap tracking which file descriptors have the `O_CLOEXEC` flag set. `open_fds[1]` is a bitmap tracking which file descriptors are currently open.
+  - They are declared as `unsigned long` variables, so they have `NR_OPEN_DEFAULT` bits (64) corresponding to 64 initial file descriptions.
+  - But why they are declared as singleton arrays instead of `unsigned long` variables. Why? Wait.
 
+Look at the fdtable struct.
+  - `**fd` points to the `fd_array`.
+  - `close_on_exec` points to the `close_on_exec_init[1]`.
+  - `open_fds` points to the `open_fds_init[1]`.
 
-### `struct files_struct`
-
-| Field | Description |
-| :---- | :---------- |
-| `count` | Reference counter tracking how many threads or processes share this file table. |
-| `fdt` | Pointer to the active `struct fdtable`. Initially points to the embedded `&fdtab`, but is redirected to dynamically allocated heap tables if the process exceeds 64 open files. |
-| `fdtab` | Embedded starter `struct fdtable` (capacity 64) to avoid dynamic heap allocation for common processes. |
-| `next_fd` | Cache hint tracking the lowest candidate integer index likely to be free, avoiding repeated linear scans from 0. |
-| `close_on_exec_init` | Embedded 64-bit starter storage backing the `fdtab.close_on_exec` bitmap. |
-| `open_fds_init` | Embedded 64-bit starter storage backing the `fdtab.open_fds` bitmap. |
-| `fd_array` | Embedded starter array of 64 `struct file *` pointers (`NR_OPEN_DEFAULT = 64`) backing `fdtab.fd`. |
-
----
-
-So, basically, 
+If we expand `fdtable` in the `files_struct`, we get:
 ```c
-fdtable.fd = files_struct.fd_array
-fdtable.open_fds = files_struct.open_fds_init
-fdtable.close_on_exec = files_struct.close_on_exec_init
+struct files_struct {
+  atomic_t count;
+  struct fdtable __rcu *fdt;
+
+  /* fdtable fields */
+  unsigned int max_fds;
+  struct file  __rcu **fd;
+  unsigned long *close_on_exec;
+  unsigned long *open_fds;
+  /* fdtable fields */
+
+  unsigned int next_fd;
+  unsigned long close_on_exec_init[1];
+  unsigned long open_fds_init[1];
+  struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+};
 ```
 
-The indirection here is crazy, but it is there for a reason.
+Now think about it.
+  - `**fd` points to `*fd_array[64]`.
+  - `close_on_exec` points to `*close_on_exec_init[1]`.
+  - `open_fds` points to `*open_fds_init[1]`.
 
-As said, `fd_array`, `open_fds_init`, `close_on_exec_init` are starter variables. A process might open more files than the starter variables could handle. In that case, a new fdtable is allocated dynamically, and `files_struct.fdt` is updated to point to the new fdtable. Consequently, new `fd_array`, `open_fds_init`, `close_on_exec_init` are also required and dynamically created. The kernel updates `files_struct.fd` to point to the new fdtable and the members of this struct are made to point to the 3 newly created variables. The older ones remain in the struct because individual struct elements can not be freed and removed. To achieve this, these "extra" pointers are required.
+Why some members of this struct are pointing to other members of the same struct?
+  - We hav already seen this before, but it was happening at a very small scale and this is huge jump, which is making it extra scary.
+  - I want you to revisit `d_name` and `d_shortname` in `struct dentry`.
+  - We had `d_name.name` pointing to `d_shortname.string` if the filename was short (<40 characters). If it was longer, `d_name.name` would point to the dynamically allocated string.
+  - Now think about it. What did we gain from this? Normally, filenames are short, and the 40 character limit was found enough, so they created a compile-time object. This removes the overhead of heap allocation for the common case. In rare cases, we just create a heap object and the string points to it instead.
 
-It is also noticeable that close_on_exec_init and open_fds_init are declared as singleton arrays, instead of `unsigned long` variables. The previous reason is applicable to them as well. When these variables are allocated on heap, we get a pointer-to-variable, not the variable itself. When we assign it to the variables, we directly get its reference. If we declared them as normal variables, we have to do `fdtable.open_fds = &open_fds_init`. But thanks to array decay, we can just point it to the array and get a pointer.
+`*fd_array[64]`, `close_on_exec_init[1]`, `open_fds_init[1]` are the starter objects with no heap overhead, just like `d_shortname.string`. They are for the normal cases where a process opens only a bunch of files. In the rare case, when a process opens more than 64 files, we need more of these resources. So, we dynamically allocate them on heap. The new objects are allocated, but who to notify about them? `**fd`, `*close_on_exec`, and `*open_fds`. Since `close_on_exec_init` and `open_fds_init` are pointers, we need the underlying object to be pointer as well. We get pointer for a heap object, so it matches. What about the starter object? If we declared a variable, we have to use the `address-of` operator to get its pointer. To keep things uniform, we can declare them as singleton arrays, thanks to array decay, we get a pointer automatically.
 
-### What is a file descriptor?
+This is fine, but fd lookup is lock-less (EXPLAIN THE REASON). A race condition can occur while we update the fdtable members to the new heap objects as this is not an atomic option. Therefore, the kernel takes the no risk pathway by allocating a new fdtable altogether. That's why `*fdt` exist. It points to the currently applicable fdtable, which points to the currently applicable three resources. This indirection is scary, but it makes things work.
 
-A File Descriptor (FD) is a process-local, unsigned integer handle that serves as an index into the kernel-managed array of open file descriptions (struct file *). It has no meaning outside the specific process that holds it.
+`fdtable.max_fds` is the current capacity of descriptor array.
 
-The man page description of `open` has some stuff about it.
+What happens to the old version of the three resources that are reallocated on heap? They sit idle, unused.
+
 
 # File Operations
 
@@ -782,6 +793,8 @@ struct path {
 ```
 
 anon_inode
+
+# Take an example of a complete walk from userspace to kernel space
 
 # Conclusion
 
