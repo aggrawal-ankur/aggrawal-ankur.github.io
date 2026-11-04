@@ -730,60 +730,176 @@ POSIX requires that `open()` must always return the lowest unused integer. `file
 
 ---
 
-What happens to the older version of these three resources after they are reallocated on heap? Nothing. They sit idle, unused.
+What happens to the older versions of these three resources after they are reallocated on heap? Nothing. They sit idle, unused.
+
+Sigh! We have discussed a lot of details. `Inodes`, `dentries`, `files`, `files_struct` and the great `fdtable` indirection. How far we are from `/dev/kvm`?
+
+I don't know about you, but I am tired. Therefore, it is important to ask where where I am right now, so that I can keep moving with faith in the path.
+
+We have already explored the structures that store metadata. The next detail is how VFS defines operations on these structures.
+  - Remember that the VFS defines generic endpoints and a filesystem implementation provides the actual implementation of these endpoints.
+  - How an endpoint is implemented is of no concern to us. But how that endpoint is reached from the generic one is what we need to understand.
 
 
-# File Operations
+# Operations
+
+To work on inodes, we have `inode_operations`. To work on files, we have `file_operations`. To work on dentries, we have `dentry_operations` and so on. I bet you can not find a structure simpler than `struct *_operations`, even `struct dentry` looks complicated in front of them.
+
+Before we explore them, I recommend you to take a look at the full declarations of `file_operations` and `inode_operations` at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12). They are at lines 1921 and 1998 respectively.
+
+You can notice a lot of familiar names here, like `*read`, `*write`, `*mmap`, `*open`, `*link`, `*symlink`, `*unlink`, `*rmdir`, and `*rename` etc. These are the generic endpoints defined by the VFS.
+
+To understand them, we have to understand runtime polymorphism.
+> *I am not a programming language expert, so I will keep a distance from "c vs c++" or "procedural vs oops" debate.*
+> *Also, I will only explain the semantics. If you wish to approach it from a proper oop-perspective, I recommend you to explore an external resource that explains it.*
+
+The whole problem statement is how we can get `object.method(args)` like semantics in C. Once we understand that, we will understand the whole mechanism.
+
+---
+
+Suppose we have the following struct and operations.
+```c
+struct BankAccount {
+  uint8_t type;
+  int balance;
+};
+
+void acc_deposit(struct BankAccount*, unsigned int);
+void acc_withdraw(struct BankAccount*, unsigned int);
+```
+
+We can simply call the functions to perform deposit and withdraw operations. However, we need `object.method(args)` semantics. How? Just define a function pointer inside the struct and we can access it with the `dot` method.
+
+The struct can be modified as follows.
+```c
+struct BankAccount {
+  uint8_t type;
+  int balance;
+
+  void (*deposit)(struct BankAccount*, unsigned int);
+  void (*withdraw)(struct BankAccount*, unsigned int);
+};
+```
+
+Now we can do:
+```c
+struct BankAccount myAcc = {
+  .deposit = &deposit,
+  .withdraw = &withdraw,
+};
+
+myAcc.acc_deposit(&myAcc, 1000);
+myAcc.acc_withdraw(&myAcc, 200);
+```
+
+Right now, we have 2 functions. Suppose we have 10 functions, that means, 10 pointer fields. Not a big deal, just 80 bytes of memory. Right? What if we have 100 instances of this struct? 80000 bytes, nothing much. Just keep increasing the number and you will be able to see the memory wastage here. Each struct is basically pointing to the same 10 pointers. How we can improve that? Is it possible to define these 10 functions once, and just make each instance point to that one definition?
+
+We can make the following modifications.
+```c
+struct BankAccount;
+struct BankAccountOps;
+
+struct BankAccount {
+  uint8_t type;
+  unsigned int balance;
+  struct BankAccountOps* acc_ops;
+};
+
+struct BankAccountOps {
+  void (*deposit)(struct BankAccount*, unsigned int);
+  void (*withdraw)(struct BankAccount*, unsigned int);
+};
+
+void acc_deposit(struct BankAccount*, unsigned int);
+void acc_withdraw(struct BankAccount*, unsigned int);
+
+static const struct BankAccountOps ops_struct = {
+  .deposit = &acc_deposit;
+  .withdraw = &acc_withdraw;
+}
+
+void init_account(struct BankAccount* acc_ref){
+  acc_ref->acc_ops = &ops_struct;
+}
+
+int main(void){
+  struct BankAccount myAcc;
+  init_account(&myAcc);
+
+  myAcc.acc_ops->deposit(&myAcc, 1000);
+  myAcc.acc_ops->withdraw(&myAcc, 200);
+}
+```
+  - The functions are defined once.
+  - The pointer to these functions are defined once.
+  - The pointer to the pointer table is per-instance.
+
+Now introduce account types.
+```c
+#define ACC_TYPE_SAVINGS (0 << 1)
+#define ACC_TYPE_CURRENT (0 << 2)
+```
+
+Expand the operations struct.
+```c
+struct BankAccountOps {
+  void (*deposit)(struct BankAccount*, unsigned int);
+  void (*withdraw)(struct BankAccount*, unsigned int);
+  int  (*fetchBalance)(struct BankAccount*);
+  void (*getInterestRate)(struct BankAccount*);
+  void (*close_acc)(struct BankAccount*);
+};
+```
+
+Generally, savings account have interest, but current accounts don't. This makes the implementation of (*getInterestRate) different for both account types.
+```c
+void acc_GetInterestRateSavings(struct BankAccount* acc_ref){
+  printf("Interest on Savings Account is: 7.5%\n");
+}
+
+void acc_GetInterestRateCurrent(struct BankAccount* acc_ref){
+  printf("No Interest on Current Account\n");
+}
+```
+
+Now the operations structs.
+```c
+static const struct BankAccountOps savings_ops = {
+  .deposit  = &acc_deposit,
+  .withdraw = &acc_withdraw,
+  .fetchBalance = &acc_fetchBalance,
+  .getInterestRate = &acc_GetInterestRateSavings,
+  .close_acc = &close_acc,
+}
+
+static const struct BankAccountOps current_ops = {
+  .deposit = &acc_deposit,
+  .withdraw = &acc_withdraw,
+  .fetchBalance = &acc_fetchBalance,
+  .getInterestRate = &acc_GetInterestRateCurrent,
+  .close_acc = &close_acc,
+}
+```
+
+Combine all of that, you get:
+
+
+
+
+
 
 The VFS provides standard, pre-built operation templates (def_chr_fops, simple_dir_operations, generic_ro_fops) so basic file systems and devices don't have to reinvent the wheel.
 
 Whenever a specialized subsystem or driver (like ext4, btrfs, or kvm) takes control of an open file, its custom file_operations table (kvm_chardev_ops) replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel.
 
-**Note: Only 11/35 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1921).**
 
-```c
-struct file_operations {
-  struct module *owner;
 
-	loff_t  (*llseek) (struct file *, loff_t, int);
-	ssize_t (*read) (struct file *, char __user *, size_t, loff_t *);
-  ssize_t (*write) (struct file *, const char __user *, size_t, loff_t *);
-
-	int (*iopoll)(struct kiocb *kiocb, struct io_comp_batch *, unsigned int flags);
-  __poll_t (*poll) (struct file *, struct poll_table_struct *);
-
- 	long (*unlocked_ioctl) (struct file *, unsigned int, unsigned long);
-  long (*compat_ioctl) (struct file *, unsigned int, unsigned long);
-
-	int (*mmap) (struct file *, struct vm_area_struct *);
-  int (*open) (struct inode *, struct file *);
-
-  int (*release) (struct inode *, struct file *);
-}
-```
-
-# Inode Operations
-
-**Note: Only 8/26 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1998).**
-
-```c
-struct inode_operations {
-	int (*permission) (struct mnt_idmap *, struct inode *, int);
-	int (*unlink) (struct inode *,struct dentry *);
-	int (*symlink) (struct mnt_idmap *, struct inode *, struct dentry *, const char *);
-	struct dentry *(*mkdir) (struct mnt_idmap *, struct inode *, struct dentry *, umode_t);
-	int (*rmdir) (struct inode *,struct dentry *);
-	int (*rename) (struct mnt_idmap *, struct inode *, struct dentry *, struct inode *, struct dentry *, unsigned int);
-	int (*setattr) (struct mnt_idmap *, struct dentry *, struct iattr *);
-	int (*getattr) (struct mnt_idmap *, const struct path *, struct kstat *, u32, unsigned int);
-}
-```
 
 # The Overall Picture
 
 # What is a device?
 
-Normally, a "device" means physical hardware that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much borader in the kernel.
+Normally, a "device" means physical hardware that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel.
 
 A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel, called a driver.
 
