@@ -282,7 +282,7 @@ struct inode {
     unsigned int __i_nlink;
   };
 
-  dev_t	 i_rdev;
+  dev_t	i_rdev;
   loff_t i_size;
 
   time64_t i_atime_sec;
@@ -732,28 +732,32 @@ POSIX requires that `open()` must always return the lowest unused integer. `file
 
 What happens to the older versions of these three resources after they are reallocated on heap? Nothing. They sit idle, unused.
 
-Sigh! We have discussed a lot of details. `Inodes`, `dentries`, `files`, `files_struct` and the great `fdtable` indirection. How far we are from `/dev/kvm`?
+Sigh! We have discussed a lot of details. `Inodes`, `dentries`, `files`, `files_struct` and the great `fdtable` indirection. It is realistic to ask how far we are from `/dev/kvm`? I don't know about you, but I am tired. Therefore, this question is necessary so that I can continue this journey faithfully.
 
-I don't know about you, but I am tired. Therefore, it is important to ask where where I am right now, so that I can keep moving with faith in the path.
-
-We have already explored the structures that store metadata. The next detail is how VFS defines operations on these structures.
+We have already explored the structures that store metadata. The next detail is how the VFS defines operations on these structures.
   - Remember that the VFS defines generic endpoints and a filesystem implementation provides the actual implementation of these endpoints.
-  - How an endpoint is implemented is of no concern to us. But how that endpoint is reached from the generic one is what we need to understand.
+  - How an endpoint is implemented is of no concern to us. But how that endpoint is connected to the generic one is what we need to understand.
+
+Let's start.
 
 
 # Operations
 
-To work on inodes, we have `inode_operations`. To work on files, we have `file_operations`. To work on dentries, we have `dentry_operations` and so on. I bet you can not find a structure simpler than `struct *_operations`, even `struct dentry` looks complicated in front of them.
+To work on inodes, we have `inode_operations`. To work on files, we have `file_operations`. To work on dentries, we have `dentry_operations`, and so on. I bet you can not find a structure simpler than `struct *_operations`, even `struct dentry` looks complicated in front of them.
 
-Before we explore them, I recommend you to take a look at the full declarations of `file_operations` and `inode_operations` at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12). They are at lines 1921 and 1998 respectively.
+Before we explore them, I recommend you to take a look at the full declarations of `file_operations` and `inode_operations` structures in [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12). They are at lines 1921 and 1998 respectively.
 
 You can notice a lot of familiar names here, like `*read`, `*write`, `*mmap`, `*open`, `*link`, `*symlink`, `*unlink`, `*rmdir`, and `*rename` etc. These are the generic endpoints defined by the VFS.
 
-To understand them, we have to understand runtime polymorphism.
-> *I am not a programming language expert, so I will keep a distance from "c vs c++" or "procedural vs oops" debate.*
-> *Also, I will only explain the semantics. If you wish to approach it from a proper oop-perspective, I recommend you to explore an external resource that explains it.*
+However, it is important to mention that these endpoints are generic with respect to the kernel space. When a process calls `open()`, it doesn't resolve to the `open()` defined in `file_operations`. There is one more indirection between them and we will explore it later.
+> *This detail might not make sense yet, but it was necessary to mention.*
 
-The whole problem statement is how we can get `object.method(args)` like semantics in C. Once we understand that, we will understand the whole mechanism.
+---
+
+To understand how a generic endpoint like `*read` is connected to an actual filesystem specific `read` implementation, we have to explore a problem and find a solution to it. That's it.
+
+The problem is quite simple. "***How we can get*** `object.method(args)` ***like semantics in C?***" Once we understand that, we will understand the whole mechanism.
+> *I am sure many of you already understand this. As said, the problem is really simple. However, walking through it would help us understand the whole mechanism with a reasoning grounded in ____.*
 
 ---
 
@@ -764,13 +768,12 @@ struct BankAccount {
   int balance;
 };
 
-void acc_deposit(struct BankAccount*, unsigned int);
-void acc_withdraw(struct BankAccount*, unsigned int);
+void acc_deposit(struct BankAccount*, unsigned int){ /* body */}
+void acc_withdraw(struct BankAccount*, unsigned int){ /* body */}
 ```
 
-We can simply call the functions to perform deposit and withdraw operations. However, we need `object.method(args)` semantics. How? Just define a function pointer inside the struct and we can access it with the `dot` method.
+We can simply call the functions to perform a deposit, or withdraw. But we need `object.method(args)` semantics. How we can get that? Just define a function pointer inside the struct and we can access it with the `dot` method. Simple enough!
 
-The struct can be modified as follows.
 ```c
 struct BankAccount {
   uint8_t type;
@@ -781,10 +784,21 @@ struct BankAccount {
 };
 ```
 
-Now we can do:
+For many people, function pointers aren't common. Up until here, I myself only knew the term. So here is a simple explanation.
+  - `void` is the return type of the function this "function pointer" points to.
+  - `(*deposit)` and `(*withdraw)` are the names of the function pointers. The function itself might be named something else.
+  - `(struct BankAccount*, unsigned int)` are the arguments accepted by the function that the pointer(s) points to.
+  - Therefore, the syntax is:
+    ```c
+    return_type (*function_pointer_name)(argument_types);
+    ```
+
+---
+
+Anyways, now we have `object.method(args)` like semantics. All we need to do is to point these members to the actual functions.
 ```c
 struct BankAccount myAcc = {
-  .deposit = &deposit,
+  .deposit  = &deposit,
   .withdraw = &withdraw,
 };
 
@@ -792,7 +806,31 @@ myAcc.acc_deposit(&myAcc, 1000);
 myAcc.acc_withdraw(&myAcc, 200);
 ```
 
-Right now, we have 2 functions. Suppose we have 10 functions, that means, 10 pointer fields. Not a big deal, just 80 bytes of memory. Right? What if we have 100 instances of this struct? 80000 bytes, nothing much. Just keep increasing the number and you will be able to see the memory wastage here. Each struct is basically pointing to the same 10 pointers. How we can improve that? Is it possible to define these 10 functions once, and just make each instance point to that one definition?
+Right now, we have two functions pointers, so 16 bytes per-instance of `struct BankAccount`. How about having 100 instances of it? 1600 bytes of memory. Not a big deal.
+
+Now increase the number of function pointers and the instances of `struct BankAccount`.
+  - If we have 50 pointers and 1000 instances, that's `50*8*1000` = `400,000` bytes, or 390 KiB.
+  - If we have 50 pointers and 5,000 instances, that's `50*8*5000` = `2,000,000` bytes, or 1.9 MiB.
+
+We can notice that the memory requirement is growing linearly with the number of instances.
+
+Think about it, what is this memory eventually used for? The functions are defined once and each struct is individually pointing to the same set of functions.
+
+Ask yourself, is this necessary? If you have understood the problem, the answer is likely not. The design is not efficient for a kernel component, or anything, in general.
+
+So, how we can improve this design?
+
+---
+
+Right now, the function pointers are stored within the struct definition, so each instance separately reserves space for them.
+
+The functions are defined once, so their address is fixed, so are the pointers to them. How about restricting the struct to only the data that varies across instances and keep the shared things separately?
+
+We can store the pointers to the functions in one place and every instance just point to that collection, instead of pointing to every single function separately.
+
+It would do two things immediately. 1) Simplify the design. 2) Eliminate unnecessary memory consumption.
+
+In this design, the majority of the struct fields are for instance-specific data. Data that is common to all instances will exist as a shared object and the instance will have a pointer to it.
 
 We can make the following modifications.
 ```c
@@ -810,96 +848,220 @@ struct BankAccountOps {
   void (*withdraw)(struct BankAccount*, unsigned int);
 };
 
-void acc_deposit(struct BankAccount*, unsigned int);
-void acc_withdraw(struct BankAccount*, unsigned int);
+void acc_deposit(struct BankAccount*, unsigned int){ /* body */ }
+void acc_withdraw(struct BankAccount*, unsigned int){ /* body */ }
 
 static const struct BankAccountOps ops_struct = {
-  .deposit = &acc_deposit;
+  .deposit  = &acc_deposit;
   .withdraw = &acc_withdraw;
 }
 
 void init_account(struct BankAccount* acc_ref){
   acc_ref->acc_ops = &ops_struct;
 }
-
-int main(void){
-  struct BankAccount myAcc;
-  init_account(&myAcc);
-
-  myAcc.acc_ops->deposit(&myAcc, 1000);
-  myAcc.acc_ops->withdraw(&myAcc, 200);
-}
 ```
   - The functions are defined once.
-  - The pointer to these functions are defined once.
+  - The pointer to these functions are defined once in static storage. Using `const` ensures that the table goes in `.rodata` and become immutable at runtime.
   - The pointer to the pointer table is per-instance.
 
-Now introduce account types.
-```c
-#define ACC_TYPE_SAVINGS (0 << 1)
-#define ACC_TYPE_CURRENT (0 << 2)
-```
+---
 
-Expand the operations struct.
+Let's complete this implementation.
 ```c
-struct BankAccountOps {
+#include <stdio.h>
+#include <stdint.h>
+
+struct BankAccount;
+struct BankAccount_ops;
+
+struct BankAccount {
+  uint8_t flags;
+  unsigned int balance;
+  const struct BankAccount_ops* acc_ops;
+};
+
+#define ACC_TYPE_SAVINGS    (1 << 0)
+#define ACC_TYPE_CURRENT    (1 << 1)
+
+struct BankAccount_ops {
   void (*deposit)(struct BankAccount*, unsigned int);
-  void (*withdraw)(struct BankAccount*, unsigned int);
+  int  (*withdraw)(struct BankAccount*, unsigned int);
   int  (*fetchBalance)(struct BankAccount*);
   void (*getInterestRate)(struct BankAccount*);
-  void (*close_acc)(struct BankAccount*);
 };
-```
 
-Generally, savings account have interest, but current accounts don't. This makes the implementation of (*getInterestRate) different for both account types.
-```c
+void acc_deposit(struct BankAccount* acc_ref, unsigned int amt){
+  printf(
+    "Prior Balance: Rs. %u\n",
+    acc_ref->acc_ops->fetchBalance(acc_ref)
+  );
+
+  acc_ref->balance += amt;
+  printf("Deposited Rs. %u\n", amt);
+
+  printf(
+    "New Balance: Rs. %u\n\n",
+    acc_ref->acc_ops->fetchBalance(acc_ref)
+  );
+}
+
+int acc_withdraw(struct BankAccount* acc_ref, unsigned int amt){
+  printf(
+    "Prior Balance: Rs. %u\n",
+    acc_ref->acc_ops->fetchBalance(acc_ref)
+  );
+
+  if (amt > acc_ref->balance) {
+    printf("Insufficient Funds.\n");
+    return 1;
+  }
+
+  acc_ref->balance -= amt;
+  printf("Withdrawed Rs. %u\n", amt);
+
+  printf(
+    "New Balance: Rs. %u\n\n",
+    acc_ref->acc_ops->fetchBalance(acc_ref)
+  );
+
+  return 0;
+}
+
+int acc_fetchBalance(struct BankAccount* acc_ref){
+  return acc_ref->balance;
+}
+
 void acc_GetInterestRateSavings(struct BankAccount* acc_ref){
-  printf("Interest on Savings Account is: 7.5%\n");
+  printf("Interest Rate: 6 percent.\n\n");
 }
 
 void acc_GetInterestRateCurrent(struct BankAccount* acc_ref){
-  printf("No Interest on Current Account\n");
+  printf("Interest Rate: Not Applicable.\n\n");
 }
-```
 
-Now the operations structs.
-```c
-static const struct BankAccountOps savings_ops = {
+static const struct BankAccount_ops acc_ops_savings = {
   .deposit  = &acc_deposit,
   .withdraw = &acc_withdraw,
   .fetchBalance = &acc_fetchBalance,
-  .getInterestRate = &acc_GetInterestRateSavings,
-  .close_acc = &close_acc,
-}
+  .getInterestRate = &acc_GetInterestRateSavings
+};
 
-static const struct BankAccountOps current_ops = {
-  .deposit = &acc_deposit,
+static const struct BankAccount_ops acc_ops_current = {
+  .deposit  = &acc_deposit,
   .withdraw = &acc_withdraw,
   .fetchBalance = &acc_fetchBalance,
-  .getInterestRate = &acc_GetInterestRateCurrent,
-  .close_acc = &close_acc,
+  .getInterestRate = &acc_GetInterestRateCurrent
+};
+
+void init_acc(struct BankAccount* acc_ref, int type){
+  acc_ref->flags = type;    /* Since no flags exist already, no need to use |= . */
+
+  if (type == ACC_TYPE_SAVINGS) {
+    acc_ref->acc_ops = &acc_ops_savings;
+  }
+  else if (type == ACC_TYPE_CURRENT) {
+    acc_ref->acc_ops = &acc_ops_current;
+  }
+}
+
+int main(void){
+  struct BankAccount savingsAccount = {0};
+  init_acc(&savingsAccount, ACC_TYPE_SAVINGS);
+
+  savingsAccount.acc_ops->deposit(&savingsAccount, 1000);
+  savingsAccount.acc_ops->withdraw(&savingsAccount, 200);
+  savingsAccount.acc_ops->getInterestRate(&savingsAccount);
+
+  struct BankAccount currentAccount = {0};
+  init_acc(&currentAccount, ACC_TYPE_CURRENT);
+
+  currentAccount.acc_ops->deposit(&currentAccount, 200000);
+  currentAccount.acc_ops->getInterestRate(&currentAccount);
+}
+```
+  - We have introduced two account types: savings and current.
+  - A few more operations are introduced.
+  - Generally, savings account pay interest on the deposit, but current accounts don't. This makes the implementation of `(*getInterestRate)` different for both account types. This one is important.
+
+Run this program.
+```bash
+$ gcc oop-c.c -o run
+$ ./run
+```
+  - Tested on gcc version 14.2.0 (Debian 14.2.0-19).
+
+---
+
+Let's connect this understanding to the VFS.
+
+The VFS provides several templates of operations. Our primary focus needs to be on `struct file_operations`.
+
+A template, by itself, is meaningless unless an instance of it is defined. Who defines these instances? Any kernel subsystem that exposes a resource as a file descriptor.
+
+For example, search `"static const struct file_operations"` on the GitHub frontend of the Linux kernel source code. You will find hundreds of files. [Mine](https://github.com/search?q=repo%3Atorvalds%2Flinux+%22static+const+struct+file_operations%22&type=code) shows 864 files with multiple occurrences.
+
+The VFS provides standard, pre-built operation templates so that basic file systems and devices don't have to start from scratch.
+
+Whenever a specialized subsystem or driver takes control of an open file, its custom `file_operations` table replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel. After that, all invocations are directly routed to the filesystem's implementation.
+
+---
+
+Let's have a look at some of these.
+
+[*/root/fs/ext4/file.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/ext4/file.c?h=v7.2.12#n908) defines `ext4_file_operations`, which provides implementations for operations that can be performed on a regular file residing on an ext4 filesystem.
+
+[*/root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n449) defines `def_chr_ops`, i.e. "default character device operations", which is the starter table for every single character device in Linux. It's only job is to find the actual operations implementation associated with the device and update the pointer to it.
+
+---
+
+During the start of this section, I have mentioned that the `(*open)` in `file_operations` is not what the userspace `open()` resolves to.
+
+This is the last detail we need to explore to complete our understanding of the VFS, given the pursuit. After that, all we have to do is explore the details specific to character devices.
+
+# The SYSCALL Indirection
+
+We will take the example of `(*read)`.
+
+Starting from line 1761 in [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1761), there are some function declarations with the `vfs_*` prefix. As we go down, we can find `vfs_read` on line 2076.
+
+`vfs_read` is defined in [*/root/fs/read_write.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/read_write.c?h=v7.2.12#n554) starting from line 554. However, I want you to gloss over this file starting from line 483 up until 583. You will notice four functions with the word `read` in them: `new_sync_read`, `__kernel_read`, `kernel_read`, `vfs_read`, `ksys_read`.
+
+Scroll 150 lines down to line 723 and you can see a `SYSCALL_DEFINEx` instruction.
+```c
+SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
+{
+	return ksys_read(fd, buf, count);
 }
 ```
 
-Combine all of that, you get:
+`SYSCALL_DEFINEx` is a macro that defines a syscall. Since a syscall can take 0-6 macros, there are 7 versions of this macro where `x` refers to the number of arguments. This is the syntax:
+```c
+SYSCALL_DEFINEx(
+  syscall_name
+  arg1_type, arg1_name
+  arg2_type, arg2_name
+  ...
+)
+```
+
+The userspace `read()` invocation after the syscall transition calls `ksys_read()`, which calls `vfs_read()`, which calls the function referred to by `file->f_op->read()` or invoke `new_sync_read()`. They resolve to the component specific implementation.
+
+You will find similar indirection for others as well.
+
+---
+
+That's it. That's all we need to know to understand character devices and `/dev/kvm`.
+
+What we have studied here is the general template of how things work through the Linux VFS layer. As said previously, regular files are excellent entrypoints to understand this. Character devices or any other type just build on top of this and bring some new details.
+
+Because we have built our foundation from scratch, with questions that appear trivial but what they enable isn't trivial, by building answers ourselves, instead of receiving them in nicely plated manner, we have done everything that is needed to understand character devices and `/dev/kvm`.
+
+It's time for character devices now. I hope you have not lost your will, cause I have not.
 
 
+# So, what is a device?
 
-
-
-
-The VFS provides standard, pre-built operation templates (def_chr_fops, simple_dir_operations, generic_ro_fops) so basic file systems and devices don't have to reinvent the wheel.
-
-Whenever a specialized subsystem or driver (like ext4, btrfs, or kvm) takes control of an open file, its custom file_operations table (kvm_chardev_ops) replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel.
-
-
-
-
-# The Overall Picture
-
-# What is a device?
-
-Normally, a "device" means physical hardware that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel.
+Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel.
 
 A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel, called a driver.
 
@@ -983,6 +1145,10 @@ struct path {
 ```
 
 anon_inode
+
+static struct char_device_struct {}
+
+anonymous fs?
 
 # Take an example of a complete walk from userspace to kernel space
 
