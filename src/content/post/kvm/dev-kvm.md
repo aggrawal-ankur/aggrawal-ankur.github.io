@@ -13,7 +13,7 @@ A text about KVM is, kind of incomplete, if it doesn't mention `/dev/kvm`. Almos
 
 The articles that I have read on the internet defines `/dev/kvm` as a "***character device file***" and immediately proceed to use it. The definition is not incorrect, but it is useful only to the people who already understand what a character device file (or a file, in general) is, and I am not one of them.
 
-For me, files are either "text" or "binary". From that standpoint, the definition of a file seems pretty clear. However, when I saw the types of files in Linux, I was surprised. It didn't took much before I realized that they don't fit the definition I was aware of.
+For me, files are either "text" or "binary". From that standpoint, the definition of a file seems pretty clear. However, when I saw the types of files in Linux, I was surprised. It didn't took much before I realized that the loose definition I had of a file isn't enough.
 
 I realized that I don't understand "***what a file means to the Linux kernel***", let alone knowing the three words that define `/dev/kvm`.
 
@@ -41,6 +41,16 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 9. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
 
+---
+
+As a reader myself, I absolutely hate when a text doesn't respect my time, energy and attention. While writing this, I have tried my best to follow the standards I expect from such a text. I have been honest when I understand something and when I don't.
+
+The text has gone through multiple rounds of editorial work. As much as I have written new words, I have polished the existing ones on a daily basis. Every morning starts by polishing the work that already exists. The proof is in the `git` [history](https://github.com/aggrawal-ankur/aggrawal-ankur.github.io/commits/main/src/content/post/kvm/dev-kvm.md).
+
+Still, it is a significant investment of your time, energy and attention. So I recommend you to evaluate thoroughly before committing to it. I have confidence in my work, but in the end, I am also a human, and can be wrong.
+
+If you do commit to it, you won't be disappointed. However, if you do get disappointed, I owe it and I am committed to improve it.
+
 # Where to start this exploration?
 
 I am taught to explore the definition of a thing, followed by its types. However, that strategy didn't worked here. The reason is the wide mismatch between what I think is a file and what it means to the Linux kernel. 
@@ -67,9 +77,12 @@ Briefly, there are seven types of files in Linux.
 
 CHANGE THE DEFINITION OF CHARACTER DEVICE FILES TO ACCOMMODATE THE FACT THAT KVM IS THAT AS WELL BUT NO CHARACTERS ARE INVOLVED THERE.
 
-> *The "symbol" attribute is used by `ls`.*
-> *"Block devices", "pipes", and "sockets" aren't relevant to this pursuit, so they are not discussed.*
-> *I am aware of the saying "everything is a file", however, it will not be explored here.*
+> *The "symbol" attribute is visible in `ls -l` as the first thing.*
+> 
+> *"Pipes", and "sockets" aren't relevant to this pursuit, so they are not discussed.*
+> *Block devices are relevant, but they are not required to be understood in detail. So, we explore them as much as the pursuit demands, not in detail.*
+> 
+> *I am aware of the saying "everything is a file", however, we will not explore the why behind it here.*
 
 ---
 
@@ -81,62 +94,83 @@ Now that we have realized that a file is more than text or binary data, we can s
 
 # What is a file?
 
-The laptop market has two major players: "***MacOS***" and "***Windows***" laptops. Laptops with a Linux-based distribution out-of-the box aren't very common. But we can change the OS to a Linux-based distribution like Debian or Arch, or other OS like FreeBSD, without changing the hardware. ***This is possible because the hardware and OS are separate entities.***
+The laptop market has two major players: "***MacOS***" and "***Windows***" laptops. There are specialized vendors that support laptops with a Linux-based distribution out-of the box, but they are not very common.
 
-Inside an operating system, we have multiple components, each designed to do a specific thing. There are drivers, a memory management system, processes and so on. 
+While we can not purchase a Linux-based laptop laptop directly, we can change the OS to a Linux-based distribution like Debian or Arch, or other OS like FreeBSD, without changing the hardware. ***This is possible because the hardware and OS are separate entities.***
+
+Inside an operating system, there are multiple components, each designed to do a specific thing. There are drivers, a memory management system, processes, scheduler and so on. 
 
 It is obvious that we love "***choices***". However, not everything is swappable. For example, we can switch the OS, but not the memory management facility the chosen OS kernel provides.
 
 ---
 
-Among these components there is a component called "***filesystem***". In simple words, a filesystem is designed to manage files.
+Among these is a component called "***filesystem***". In simple words, a filesystem is designed to manage files.
 > *Please note that this could be considered an over-simplification of the topic*.
 > *In case you are looking for a precise definition, please checkout other resources.*
 
 Because there are different types of files, there are different filesystems for them.
 
-A "***storage filesystem***" is used when we want our data to persist across reboots on non-volatile storage hardware like SSD or HDD.
+A "***storage filesystem***" is used when we want our data to persist across reboots on non-volatile storage hardware like a SSD or HDD.
+  - A storage filesystem organizes a flat, unformatted array of storage blocks into a navigable hierarchy of human-readable files and directories while tracking space allocation and metadata.
+  - In simple words, a storage filesystem manages metadata about the data that we can see inside files.
 
-There are different ways to manage the same storage hardware, each with different goals. Therefore, there are different storage filesystems like ext4, xfs, btrfs, ntfs, and so on.
+There are different ways to manage this metadata, each with different goals and trade-offs. That gives rise to different storage filesystems like ext4, xfs, btrfs, ntfs, and so on.
 
 > *You can gloss over this [Wikipedia](https://en.wikipedia.org/wiki/File_system) article to get an idea of it, although it is not required.*
 
-Different filesystems means the kernel must support them. But how?
+"***If a storage filesystem organizes the metadata of the data inside a file (among other things), who puts the data on the storage hardware?***"
+  - Suppose a storage filesystem also communicate with the storage hardware.
+  - Does that mean if there are 10 storage filesystems, then each of them must write the code to communicate with the storage hardware? The answer looks like a YES, is it?
+  - I mean, we can do that, but whether we should, is the real question. Obviously, we don't.
+  - `ext4` works regardless of an SSD or HDD. Does that mean there is `ext4_ssd` and `ext4_hdd`? NO.
+  - There is a separate component whose only job is to communicate with "a" storage hardware and the storage filesystems use it to interact with the storage hardware.
+
+---
+
+Different filesystems means the kernel must support them. How?
 
 To manage this variety of filesystems, allow new ones to be created without disturbing anything, and give userspace a single unified way to access files regardless of their type, the Virtual File System (VFS) was created.
 
-The VFS abstracts different filesystems into one layer, allowing user space applications to call unified handlers and the VFS determines what needs to be done.
+The VFS abstracts different filesystems into one unified interface. Basically, all the complexity is shifted to the kernel space and the userspace is provided with generic, unified handlers, concealing all the details. The kernel takes care of everything.
 
-# Virtual File System (VFS)
+Let's understand the virtual file system.
+
+## Virtual File System (VFS)
 
 The kernel defines a general filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
 
 This abstraction is like a "***contract***". If a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
 
-The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled into the contract. For example, take `read()`.
-  - This abstraction is designed to "***read a file***".
-  - Different filesystems organize data differently, so the mechanism of reading a file is supposed to vary too. All they have to do is to provide the function that does the job of "reading a file" to the VFS and the VFS maps it to its generic `read()` abstraction.
-  - When a process opens a file and calls `read()` on it, the VFS identifies the details and routes the request to the relevant file system handler.
+The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled into the contract. For example, take `read()`. This abstraction is designed to "***read a file***".
+  - Different storage hardware "read" data differently.
+  - The software that can communicate with this hardware needs to know what exactly on the hardware it needs to "read".
+  - A storage filesystem guides that component to the correct location on the hardware (among other things) where the data is stored.
+  - The storage filesystem provides this function that initiates the job of "reading a file" to the VFS and the VFS maps it to its generic `read()` abstraction.
+  - When a process opens a file and calls `read()` on it, the VFS identifies the details and routes the request to the relevant filesystem handler, which calls the relevant hardware handler.
 
-Therefore, VFS is best understood as a contract. The next step is to understand what this "contract" looks like.
+---
+
+Therefore, the VFS is best understood as a contract and the next step is to understand what this "contract" looks like.
 > *The details below are what I am able to identify. It is possible that the VFS is more than this, but I can write about it only when I understand it, and exploring any more detail is beyond the scope of this exploration.*
 > 
 > *The details below are supposed to introduce you to the contract. They are explored in enough detail when the associated structures are introduced.*
 
-## Feature Set
+### Feature Set
 
 | Sr. | Feature Set | Brief Contract Details | Kernel Structures |
 | :-- | :---------- | :--------------------- | :---------------- |
 | 1 | **The Entity** | An identity for the resource. | `struct inode`,<br>`struct inode_operations` |
-| 2 | **Access Control** | Standard permission checks before access is granted. | `struct inode` |
+| 2 | **Access Control** | Standard permission checks before the access is granted. | `struct inode` |
 | 3 | **The Session** | An active, stateful dialogue between a process and an entity. Multiple sessions can be opened for the same resource. | `struct file` |
-| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token, protecting kernel address space. | `struct files_struct`,<br>`struct fdtable` |
-| 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers are provided. | `struct file_operations`,<br>`struct dentry` |
+| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token, protecting the kernel address space. | `struct files_struct`,<br>`struct fdtable` |
+| 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers. | `struct file_operations`,<br>`struct dentry` |
 | | | Deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. |
 
-> *If the description of "entity" reads like "this is what a file is, isn't it?", I want you to hold it for a while. There is a reason I have used the term "entity", instead of "file".*
+> *If the description of an "entity" reads like "this is what a file is, isn't it?", I recommend you to hold it for a while. There is a reason I have used the term "entity", instead of "file".*
 
-## Trade-offs
+---
+
+### Trade-offs
 
 "***Syscall & Indirection Latency***"
   - Accessing a resource through a file forces a privilege boundary switch into the kernel, followed by multi-pointer dereference chains (fd $\to$ files_struct $\to$ struct file $\to$ struct inode $\to$ file_operations).
@@ -162,8 +196,8 @@ Therefore, VFS is best understood as a contract. The next step is to understand 
 
 We have unpacked a lot of things, so here is a short recap.
   - There are different types of files in Linux.
-  - Different filesystems are required to manage different types of files. Moreover, there are different filesystems solving the same problem differently.
-  - The OS kernel must support this variety of filesystems.
+  - Different type of files means different filesystems are required. Moreover, there are different filesystems solving the same problem differently.
+  - The Linux kernel must support this variety of filesystems.
   - The kernel provides a generic file system abstraction, called the VFS, which is a contract and anything that can be modeled into it could be managed as a "file". The implementation of the filesystem remains unaffected.
 
 So, what next? It's time to define files.
@@ -180,14 +214,14 @@ As humans, we can easily define a file as "***bytes of data on a hardware storag
   - A set of abstractions are required to manage these "***bytes***".
   - That's why, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace.
 
-Therefore, we need more than just the text to create a text file. We need "data" on the disk and some "metadata" that describes that "data" to facilitate operations on (or around) it.
+It is clear that we need more than just the text to create a text file. We need "data" on the disk and some "metadata" that describes that "data" to facilitate operations on (or around) it.
 
 ---
 
 We have the storage hardware where the bytes reside. We have some machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs a file.***" We have seen this before, but where?"***The separation between an OS and the hardware.***"
   - A combination of hardware provides raw capabilities.
-  - An OS taps into them and provides an easy way to utilize them.
-  - Different OS tap on those capabilities and provide access to the same hardware resources in different ways with different goals in consideration.
+  - An OS taps into them and provides an interface to utilize them.
+  - Different OS tap on those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
 
 Think about it. A text file stored on a physical storage device is backed by it. How about replacing the backing with something else?
   - Replace hardware storage with a table of names and pointers, and we get a directory file.
@@ -196,15 +230,21 @@ Think about it. A text file stored on a physical storage device is backed by it.
   - Replace hardware storage with a ring buffer in RAM, and we get a pipe.
   - Replace hardware storage with a network interface card (NIC), and we get a socket.
 
-That's how we get those weird looking files. If an article talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
+That's how we get those weird looking files.
 
-It is noticeable that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the VFS. They merely provide the right base to understand the rest of the files. The "***replace X with Y, and we get FILE_TYPE_Z***" simplification was possible only after we have understood "***regular files***".
+---
+
+If an article talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
+
+It is clear that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the VFS. They merely provide the right base to understand the rest of the files.
+
+The "***replace X with Y, and we get FILE_TYPE_Z***" simplification was possible only after we have understood "***regular files***".
 
 ---
 
 So, what is a file? A file is an active instance of the VFS contract. The contract defines the properties and a file is a runtime instance of it.
 
-While the picture reads complete, there is one piece that is missing.
+While the picture looks complete, there is one piece that is missing.
 
 ## One Last Surprise
 
@@ -219,9 +259,11 @@ Therefore, a file in Linux is made up of 3 components.
   2. The metadata describing the resource, and
   3. The metadata associated with an open file description.
 
+---
+
 Now what is surprising here?
 
-  - In the Linux kernel's terminology, the metadata about the resource is called "***inode***", and the per-instance metadata is called "***file***". The term "***file***" means an instance of an "***inode***".
+  - In the Linux kernel's terminology, the metadata about the resource is called "***inode***", and the per-instance metadata is called "***file***". The term "***file***" means an instance of an "***inode***". Not the complete stack.
   - But conceptually, per-instance metadata, inode and the resource backing them together makes a file.
 
 This terminology is why the feature set table uses the term "***entity***", not "***file***".
@@ -230,18 +272,17 @@ This terminology is why the feature set table uses the term "***entity***", not 
 > 
 > *As I have mentioned earlier, it is possible that the author(s) perceived it differently, which led to this terminology.*
 
-"Please remember this distinction and save yourself headaches later."
+"***Please remember this distinction and save yourself headaches later.***"
 
 ---
 
 That's the core of the VFS. Everything else is a detail that we can choose to explore if we need it.
 
-> *As decided, block devices, pipes and sockets aren't relevant to this pursuit, so they are not discussed.*
-> *Now we will move on to the details that does matter to us.*
+Now we will explore the details relevant to this pursuit.
 
-# Kernel Structures and their Location
+# Kernel Structures
 
-Following structures are relevant to this exploration.
+The following structures are relevant to this exploration.
 
 | Structures | Files |
 | ---------- | ----- |
@@ -256,7 +297,7 @@ We will explore them one-by-one.
 
 > *Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another. This creates an inherent circular dependency. We can not fully understand a struct until others are introduced. Therefore, if a field don't make sense, don't force it.*
 
-# Index Node (or inode)
+## Index Node (or inode)
 
 ***An inode is the kernel's master record for a single, distinct entity in a filesystem. It contains everything the OS needs to know about that entity, except its name.***
 > *We will talk about this quirk in sufficient detail later.*
@@ -317,17 +358,17 @@ Below is a description of each field.
 | `i_op`  | Pointer to the `struct inode_operations`, defining metadata and directory tree functions. |
 | `i_ino` | Inode number. A unique 64-bit identifier for this inode in its file system. |
 | `i_nlink` | Number of hard links pointing to this inode. |
-| `i_rdev`  | Device number (`dev_t`). Encodes `(Major, Minor)` numbers. Only meaningful for character and block device. |  
+| `i_rdev`  | Device number. Only meaningful for character and block device. |  
 | `i_size`  | File size in bytes. For regular files, indicates content length; for device nodes like `/dev/kvm`, it is 0. |
 | `i_atime_sec`, `i_atime_nsec` | Timestamp of the last file access (seconds and nanoseconds). |
 | `i_mtime_sec`, `i_mtime_nsec` | Timestamp of the last file content modification (seconds and nanoseconds). |
 | `i_ctime_sec`, `i_ctime_nsec` | Timestamp of the last inode status/metadata change (seconds and nanoseconds). |
 | `i_fop` | Pointer to the `struct file_operations`. |
-| `i_cdev`<br>in the last union | Pointer to `struct cdev`. Cached in the union once the character device is resolved during open. |
+| `i_cdev`<br>in the last union | Pointer to `struct cdev`. Cached in the union once the character device is resolved. |
 | `i_link`<br>in the last union | Pointer to the target path string when the inode represents a symbolic link. |
 
 
-# An instance of an Inode
+## An instance of an Inode
 
 ***A*** `struct file` ***represents an active, open session with an inode in memory.***
 
@@ -365,12 +406,12 @@ Below is a description of each field.
 | `private_data` | Generic pointer used by drivers to attach per-instance state. |
 | `f_inode` | Pointer to the underlying `struct inode`. |
 | `f_flags` | Status and access flags passed from userspace to `open()` (e.g. `O_RDWR` and `O_CLOEXEC`). |
-| `f_path`  | Contains the `struct dentry*` and `struct vfsmount*` for this open file. |
+| `f_path`  | Contains pointers to the `struct dentry` and `struct vfsmount` for this open file. |
 | `f_pos`   | Current byte offset in the file. Useful to regular files, directories and block devices. |
 | `f_ref`   | A file struct can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same file struct. This member counts those references. The `struct file` and underlying state is destroyed only when `f_ref` drops to 0. |
 
 
-# Directory Files
+## Directory Files
 
 The data blocks of a regular file consists of bytes, be it text or binary.
 
@@ -396,7 +437,7 @@ Reading these entries from disk every single time we navigate a path would be ve
 
 ## An Entry In A Directory File
 
-An entry in a directory file is represented by a `dentry`, which literally stands for "directory entry".
+An entry in a directory file is represented by `struct dentry`, which literally stands for "directory entry".
 
 **Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
 
@@ -430,10 +471,10 @@ Below is a description of each field.
 | `d_children` | Head of the linked list containing all child dentries for a particular directory file. |
 | | Meaningful only if this dentry is for a directory file. For a leaf node like "kvm" in `/dev/kvm`, this list is empty. |
 
-A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you may have noticed two things.
+A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you would have noticed two things.
   1. The function of `d_children` is that of a pointer, but it is declared like a structure.
-  2. How the kernel knows whether `d_name` or `d_shortname` points to the filename?
-   
+  2. How the kernel knows who points to the filename: `d_name` or `d_shortname`?
+
 Let's talk about them.
 
 ---
@@ -483,29 +524,29 @@ int dname_external(const struct dentry *dentry)
 }
 ```
 
-I don't know about others, but reading kernel code can easily get boring when I am repeatedly seeing the same thing every single day. It gets worse when nothing makes sense and I am putting a lot of energy.
+I don't know about others, but reading kernel code can easily get boring when I am repeatedly seeing the same thing every single day. It gets worse when nothing makes sense.
 
-But the moment I see stuff like this and it clicks into place, I get such a dopamine rush that no cheap source can match, not even remotely.
+But the moment I see stuff like this and it clicks, I get such a dopamine rush that no cheap source can match, not even remotely.
 
 ---
 
 ***Note: How dentries are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
 
-# Why an inode lacks a filename?
+## Why an inode lacks a filename?
 
-A filename can be classified as metadata, and this is fixed metadata, so it should go into the inode. But based on what we have seen so far, that is not the case.
+A filename can be classified as metadata, so it should go into an inode. But based on what we have seen so far, that is not the case.
 
 So, why filenames are detached from the rest of the metadata?
 > *I have found two points that I can understand and reason about. That's what we are going to discuss. There can be more as well.*
 > *However, please note that they may or may not be historically accurate. So please forgive me on that side.*
 
-## 1. Fixed Size Inodes
+### 1. Fixed Size Inodes
 
 A filesystem is not an exotic concept. It dates back to 60s and 70s, almost 50-60 years from today. Check this text written by [Paul Krzyzanowski](https://pk.org/articles/big-ideas-fs.html).
 
 Similarly, the concept of inode is not exotic either. It dates back to 1969 during the creation of the first version of the UNIX operating system.
 
-Systems these days have generous resources, be it memory or processing, which was not the case in history, at least in 50s, 60, or 70s, when these concepts were being designed. Therefore, the design had to be efficient. It can not be an after-thought.
+Systems these days have generous resources, be it memory or processing, which was not used to be the case historically, at least in the 50s, 60, or 70s, when these concepts were being designed. Therefore, the design had to be efficient.
 
 From this perspective, separating the filename from the rest of the metadata in an inode is a great design decision as it keeps the size of an inode fixed.
 
@@ -517,7 +558,7 @@ It doesn't require extra knowledge to understand that all the fields in an inode
 
 A filename, on the other hand, is not fixed. Files can be renamed as well. The size can not be determined at compile-time.
 
-Therefore, by separating filename from the rest of the metadata, we can get a fixed size inode. The advantages of this is that finding inode `#N` on storage requires zero searching or tree traversal. It is pure arithmetic:
+Therefore, by separating filename from the rest of the metadata, we can get a fixed size inode. The advantages of this is that finding inode `#N` on the storage device takes `O(1)` time. It is pure arithmetic:
 ```c
 byte_off = inode_table_base + (inode_number-1) * sizeof(struct inode);
 ```
@@ -529,13 +570,15 @@ However, I have a counter argument. Before you read it, I want to say, "yes, it 
 
 Linux anyways doesn't allow filenames larger than 255 bytes. The upper bound is fixed. We can allocate an inline buffer at compile-time. No heap overhead.
 
-If we are concerned about "internal fragmentation" or "memory pressure" (memory wastage, basically), I want to say that the kernel has many generic structs and many instances of them don't utilize them properly. Take `file_operations` for example. A lot of the fields are only relevant to files with read/write like capabilities. `/dev/kvm`, on the other hand, is mostly `ioctl` based. Doesn't this generalization waste memory? Yeah, generalization have cost, and we have acknowledged that in the tradeoffs section, but it shouldn't be used as an excuse here.
+If we are concerned about "internal fragmentation" or "memory pressure" (memory wastage, basically), I want to say that the kernel has many generic structs and many instances of them don't utilize them properly.
+  - Take `file_operations` for example. A lot of the fields are only relevant to files with read/write like capabilities. `/dev/kvm`, on the other hand, is mostly `ioctl` based. Doesn't this generalization waste memory?
+  - Yeah, generalization have cost, and we have acknowledged that in the tradeoffs section, but it shouldn't be used as an excuse here.
 
-However, I understand that the authors/maintainers are magnitudes better than me, and if they have agreed on it, then there is a reason for it. I only want to know that reason because I am not able to think what it is.
+However, I understand that the authors/maintainers are magnitudes more knowledgeable than me, and if they have agreed on it, then there is a reason for it. I only want to know that reason because I am not able to think what it is.
 
 Anyways, the separation was designed to deal with a real problem. But this separation has created way for a feature as well.
 
-## 2. Multiple Names (Link Files)
+### 2. Multiple Names (Link Files)
 
 We know that a directory file maps human-readable names to inodes. Is it possible to map more than one name to the same inode? Yes, and that's the concept behind "***link files***".
 
@@ -545,7 +588,9 @@ There are two kinds of links: "***hard links***" and "***soft links***". Soft li
   - Mapping a human-readable name to an inode is what creating a hard link means.
   - Mapping a human-readable name to a path is what creating a soft link means.
 
-Link files are conceptually equivalent to shallow copy in programming. For example, updating `y` in the snippet below updates `x` too, as both of them point to the same entity.
+---
+
+Link files are conceptually comparable to shallow copy in programming. For example, updating `y` in the snippet below updates `x` too, as both of them point to the same entity.
 ```c
 #include <stdio.h>
 
@@ -578,7 +623,7 @@ A hard link only creates a new dentry, but a soft link creates an inode as well.
   - Its `i_mode` has the `S_IFLNK` bit set.
   - The path to the target file is stored in the `i_link` field (the last union).
 
-If the inode corresponding to the target path is deleted, or the dentry of the target path is deleted, the soft link will be effectively broken. What if the path is reinstated to a different inode? The symlink will start to work, but it is not intended to. How the kernel deals with this?
+If the inode corresponding to the target path is deleted, or the dentry of the target path is deleted, the soft link will be effectively broken. What if the path is reinstated to a different inode? The symlink will continue to work, but it is not intended to. How the kernel deals with this?
   - The kernel does nothing. That's the design.
   - A symlink only stores a raw text path. It doesn't care about the inode behind it.
 
@@ -590,7 +635,7 @@ Now, I leave this question to you.
 
 Personally, the answers aren't very satisfactory to me. But the question is not something I must resolve to move forward, so I have left it for now.
 
-# How open file descriptions are managed?
+## How open file descriptions are managed?
 
 In the userspace, a file is generally opened by calling `open()` or similar functions. That happens inside a process. Therefore, the per-instance state is managed on a per-process basis.
 
@@ -619,19 +664,21 @@ struct files_struct {
 };
 ```
 
-Normally I prefer tables to explain struct fields. But the indirection here is absolutely crazy, which is why I am making an exception here.As a beginner, I am absolutely on your side. Indirection often feels ridiculous, until you know why it exists.
+Normally I prefer tables to explain struct fields. But the indirection here is absolutely crazy, which is why I am making an exception here.
 
-These structs are quite simple, but there is a problem that has made them complex. Once we understand that problem, we will understand this indirection. And the best part is that we have already seen this indirection at play, the worse part is that what we have seen is a miniature version of this, this makes the gap huge and we are not able to see the indirection at play immediately.
+Indirection often feels ridiculous, until you know why it exists.
+
+These structs are quite simple, but there is a problem that has made them complex. Once we understand that problem, we will understand this indirection. And the best part is that we have already seen this indirection at play, the worse part is that what we have seen is a miniature version of this, which makes the gap huge and we are not able to see the indirection at play immediately.
 
 Let's start.
 > *By the way, I recommend not focus on `__rcu`. It is not necessary.*
 
 ---
 
-`fd_array` is a collection of `struct file*` pointers, where each pointer correspond to an open file description.
+`fd_array` is a collection of `struct file` pointers, where each pointer correspond to an open file description.
   - Since it is an array, each pointer is on an index. This index is what that is returned to the userspace by the name "***file descriptor***". Therefore, a file descriptor is an opaque, process-local integer that is returned to the userspace.
-  - Whenever a process performs an operation using this integer, let's say `read()`, this integer is used to find the `struct file` instance corresponding to it, i.e. `files_struct->fd_array[fd]` and things continue afterwards. It is the one-and-only key to access an open file description.
-  - This array is initialized with `NR_OPEN_DEFAULT` entries (64). This provides a compile-time start, preventing initial heap overhead.
+  - Whenever a process performs an operation using this integer, let's say `read()`, this integer is used to find the `struct file` instance corresponding to it, i.e. `files_struct->fd_array[fd]` and things continue afterwards. It is the "***one-and-only***" key to access an open file description.
+  - This array is initialized with `NR_OPEN_DEFAULT` (64) entries. This provides a compile-time start, preventing initial heap overhead.
   - Normally a process don't use these many file descriptors, but if a process ends up opening more than 64 files, what happens? Wait.
 
 ---
@@ -640,7 +687,7 @@ Let's start.
 
 `open_fds[1]` is a bitmap tracking which file descriptors are currently open.
 
-Both of them are declared as `unsigned long` variables, so they have `NR_OPEN_DEFAULT` bits (64) corresponding to 64 initial file descriptions. But they are declared as singleton arrays, instead of `unsigned long` variables. Why? Wait.
+Both of them are `unsigned long`, so they have `NR_OPEN_DEFAULT` bits (64) corresponding to 64 initial file descriptions. But they are declared as singleton arrays, instead of `unsigned long` variables. Why? Wait.
 
 ---
 
@@ -673,12 +720,14 @@ Now think about it. Why three members of this struct are pointing to the other t
 
 This definitely looks ridiculous, but as I have said, we have seen this before. You might not be able to recall it, but two variable names are all that is required to magically bring it back to your memory. I recommend you to revisit `d_name` and `d_shortname` in `struct dentry`.
 
-  - We had `d_name.name` pointing to `d_shortname.string` if the filename was short (<40 characters).
+  - We had `d_name.name` pointing to `d_shortname.string` if the filename was short (< 40 characters).
   - If it was longer, `d_name.name` would point to the dynamically allocated string.
 
 What did we gained from this? I hope I don't have to remind that, at least.
   - In practice, most filenames are short, and the 40 character limit was probably found enough, so they created a compile-time object for it.
   - This removes the overhead of heap allocation for the common case. In rare cases, we just create a heap object and the string points to it instead.
+
+---
 
 Now question how does this apply here. 64 is already a decent number. A normal process doesn't have this much business, so it barely utilizes this. Therefore, this compile-time object ensures no heap overhead for the common case.
 ```c
@@ -688,6 +737,8 @@ files_struct->fdtab.open_fds = files_struct->open_fds_init;
 ```
 
 When a process does happened to open more than 64 files, we just reallocate the resources on heap and redirect the fields in `fdtab` to them. The exact same idea as with a dentry.
+
+---
 
 The second unresolved question is why `close_on_exec_init` and `open_fds_init` are defined as singleton arrays. The answer is very simple, we just have to think in the opposite direction. What worse could happen if they are defined as normal variables?
   - `close_on_exec` and `open_fds` in `struct fdtable` are pointer variables. They store a pointer.
@@ -704,7 +755,7 @@ In a multi-threaded environment, all the threads belonging to the same process s
 When multiple threads share the same `files_struct`, concurrency needs to be managed.
 > *Since I don't understand concurrency yet, I will not pretend I understand this problem.*
 
-The thing is, when multiple threads share the same `files_struct` and continuously access the state, we have to be careful while updating it. Otherwise, we might become a victim of a race condition.
+The thing is, when multiple threads share the same `files_struct` and continuously access the shared state, we have to be careful while updating it. Otherwise, we might become a victim of a race condition.
 
 That's why, instead of updating the `fdtable` instance inside the `files_struct` with pointers to the reallocated resources, a new `fdtable` is allocated and its pointers are set to the reallocated resources. This way, any thread accessing the current state always sees a complete and valid `fdtable`.
 
@@ -717,9 +768,11 @@ But, who points to this newly allocated `fdtable` now?
 I guess this is the first struct we have discussed in this detail. We deserve a summary, so here it is.
   - `files_struct.fd_array[64]` holds pointers to open file descriptions, i.e. `struct file`.
   - `close_on_exec_init` and `open_fds_init` are singleton arrays that hold bitmasks. 64 bits, one for each open fd.
-  - `fd_array[64]`, `close_on_exec_init` and `open_fds_init` are compile time allocated objects provided in the start to prevent heap overhead.
+  - `fd_array[64]`, `close_on_exec_init` and `open_fds_init` are compile-time allocated objects provided in the start to prevent heap overhead.
   - Some members of the embedded `fdtable` struct point to these compile-time objects. The struct itself is pointed to by `files_struct.fdt`, which tracks the currently active `fdtable`.
   - When the current resources are exhausted, they are reallocated on heap. A new `fdtable` is allocated, its members point to the reallocated resources, and `files_struct.fdt` is updated to point to the new `fdtable`.
+
+---
 
 `files_struct.count` counts how many threads are sharing this `files_struct`.
 
@@ -730,18 +783,20 @@ POSIX requires that `open()` must always return the lowest unused integer. `file
 
 ---
 
-What happens to the older versions of these three resources after they are reallocated on heap? Nothing. They sit idle, unused.
+What happens to the older versions of these resources after they are reallocated on heap? Nothing. They sit idle, unused.
+
+---
 
 Sigh! We have discussed a lot of details. `Inodes`, `dentries`, `files`, `files_struct` and the great `fdtable` indirection. It is realistic to ask how far we are from `/dev/kvm`? I don't know about you, but I am tired. Therefore, this question is necessary so that I can continue this journey faithfully.
 
-We have already explored the structures that store metadata. The next detail is how the VFS defines operations on these structures.
+We have already explored the structures that store the metadata. The next detail is how the VFS defines operations on these structures.
   - Remember that the VFS defines generic endpoints and a filesystem implementation provides the actual implementation of these endpoints.
   - How an endpoint is implemented is of no concern to us. But how that endpoint is connected to the generic one is what we need to understand.
 
 Let's start.
 
 
-# Operations
+## Operations
 
 To work on inodes, we have `inode_operations`. To work on files, we have `file_operations`. To work on dentries, we have `dentry_operations`, and so on. I bet you can not find a structure simpler than `struct *_operations`, even `struct dentry` looks complicated in front of them.
 
@@ -754,10 +809,10 @@ However, it is important to mention that these endpoints are generic with respec
 
 ---
 
-To understand how a generic endpoint like `*read` is connected to an actual filesystem specific `read` implementation, we have to explore a problem and find a solution to it. That's it.
+To understand how a generic endpoint like `(*read)` is connected to an actual filesystem specific `read` implementation, we have to explore a problem and find a solution to it. That's it.
 
 The problem is quite simple. "***How we can get*** `object.method(args)` ***like semantics in C?***" Once we understand that, we will understand the whole mechanism.
-> *I am sure many of you already understand this. As said, the problem is really simple. However, walking through it would help us understand the whole mechanism with a reasoning grounded in ____.*
+> *I am sure many of you already understand this. As said, the problem is really simple. However, walking through it would help us understand the whole mechanism with a reasoning grounded in ____ FILL THIS PLACEHOLDER.*
 
 ---
 
@@ -784,7 +839,7 @@ struct BankAccount {
 };
 ```
 
-For many people, function pointers aren't common. Up until here, I myself only knew the term. So here is a simple explanation.
+For many people, function pointers aren't common. Up until here, I myself knew the term only. So here is a simple explanation.
   - `void` is the return type of the function this "function pointer" points to.
   - `(*deposit)` and `(*withdraw)` are the names of the function pointers. The function itself might be named something else.
   - `(struct BankAccount*, unsigned int)` are the arguments accepted by the function that the pointer(s) points to.
@@ -1002,7 +1057,7 @@ For example, search `"static const struct file_operations"` on the GitHub fronte
 
 The VFS provides standard, pre-built operation templates so that basic file systems and devices don't have to start from scratch.
 
-Whenever a specialized subsystem or driver takes control of an open file, its custom `file_operations` table replaces the default pointer. The generic tables serve as the default baseline until the specific driver takes over the wheel. After that, all invocations are directly routed to the filesystem's implementation.
+Whenever a specialized subsystem or driver takes control of an open file, its custom `file_operations` table replaces the default one. After that, all the invocations are directly routed to the specific implementation.
 
 ---
 
@@ -1018,7 +1073,7 @@ During the start of this section, I have mentioned that the `(*open)` in `file_o
 
 This is the last detail we need to explore to complete our understanding of the VFS, given the pursuit. After that, all we have to do is explore the details specific to character devices.
 
-# The SYSCALL Indirection
+## The SYSCALL Indirection
 
 We will take the example of `(*read)`.
 
@@ -1050,11 +1105,11 @@ You will find similar indirection for others as well.
 
 ---
 
-That's it. That's all we need to know to understand character devices and `/dev/kvm`.
+That's it. That's all we need to know to understand "devices", then "character devices" and finally `/dev/kvm`.
 
 What we have studied here is the general template of how things work through the Linux VFS layer. As said previously, regular files are excellent entrypoints to understand this. Character devices or any other type just build on top of this and bring some new details.
 
-Because we have built our foundation from scratch, with questions that appear trivial but what they enable isn't trivial, by building answers ourselves, instead of receiving them in nicely plated manner, we have done everything that is needed to understand character devices and `/dev/kvm`.
+Because we have built our foundation from scratch, with questions that appear trivial but what they enable isn't trivial, by building answers ourselves, instead of receiving them in nicely plated manner, we have done everything that is needed to understand devices, character devices and finally `/dev/kvm`.
 
 It's time for character devices now. I hope you have not lost your will, cause I have not.
 
@@ -1063,19 +1118,27 @@ It's time for character devices now. I hope you have not lost your will, cause I
 
 Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel.
 
-A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel, called a driver.
+A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel called, "***a drive**r*".
 
-Physical Hardware Devices: A real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.
+  - "***Physical hardware devices***" are a real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.  "***Note: No need to understand what a bus is.***"
 
-CPU Silicon Capability Devices: Specialized hardware circuits and microcode built directly into the CPU processor die. For example, Intel's VT-x or random number generators.
+  - "***CPU silicon capability***" are specialized hardware circuits and microcode built directly into the CPU processor die. For example, Intel's VT-x or random number generators.
 
-Pseudo Devices: Pure kernel software constructs that implement the device interface to provide OS services without any hardware behind them. For example, /dev/null, which discards all the data passed to it.
+  - "***Pseudo devices***" are purely kernel software constructs that implement the device interface to provide OS services without any hardware behind them. For example, `/dev/null`, which discards all the data passed to it.
+
+---
+
+A device file (or node) exists on a pseudo filesystem in RAM, not on any hardware called, `devtmpfs`.
+
+A pseudo filesystem is a filesystem that lives entirely in RAM, backed by kernel memory. When the system powers off, it vanishes completely. When it powers on, it constructs it dynamically.
+
+`devtmpfs` is an in-memory filesystem mounted at `/dev`. Whenever a driver registers a device with the kernel (e.g. KVM registers /dev/kvm, or you plug in a USB drive), the kernel itself automatically creates a device node in `devtmpfs`.
+
+The `i_mode` has the `S_IFCHR` bit set if the inode is for a device file and the `*i_cdev` field in the last union points to the character device it is associated with.
 
 ## The identity of a device
 
-A normal file on an SSD is identified by its Inode Number.
-
-A device is identified by a 32-bit integer called dev_t, which is split into two numbers: (Major, Minor).
+A device is identified by a 32-bit integer called `dev_t`, which is split into two numbers: (Major, Minor).
 
 ```
  31                    20 19                               0
@@ -1091,10 +1154,8 @@ The Minor Number (Which Specific Instance): Tells that driver which specific ins
 ---
 
 Think of an IP address and a Port number:
-
-An IP address identifies the computer on a network.
-A Port number identifies which specific program on that computer gets the packet.
-In Linux device drivers, dev_t is the exact same concept
+  - An IP address identifies the computer on a network.
+  - A Port number identifies which specific program on that computer gets the packet.
 
 ## A Character Device
 
@@ -1131,29 +1192,12 @@ struct miscdevice {
 ```
 
 
+
+
 ---
 
-A generic entry for operations structures, then go to specifics.
-struct dentry_operations
-
-
-```c
-struct path {
-  struct vfsmount *mnt;    // Which mounted filesystem instance is this in?
-  struct dentry   *dentry; // Which specific name/node in that filesystem?
-};
-```
-
-anon_inode
-
-static struct char_device_struct {}
-
-anonymous fs?
+anon_inode, devtmpfs, anonymous fs, char_device_struct {}
 
 # Take an example of a complete walk from userspace to kernel space
 
 # Conclusion
-
-The text feels more about files in general, rather than `/dev/kvm`. I am not sure how the trajectory would be different if I understood files previously.
-
-I tried searching for articles on the internet, specifically about files and devices, not `/dev/kvm`, so that I can understand the primitives that make `/dev/kvm`. However, I couldn't find anything.
