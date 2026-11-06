@@ -1111,45 +1111,114 @@ What we have studied here is the general template of how things work through the
 
 Because we have built our foundation from scratch, with questions that appear trivial but what they enable isn't trivial, by building answers ourselves, instead of receiving them in nicely plated manner, we have done everything that is needed to understand devices, character devices and finally `/dev/kvm`.
 
-It's time for character devices now. I hope you have not lost your will, cause I have not.
+It's time to explore devices. Yeah, it's been a long time, but I can't help. I am exhausted, but I have not lost the will to continue; I hope you haven't either.
 
 
-# So, what is a device?
+# What is a device?
 
-Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel.
+If you remember the types of files, some of them have "device" in them like, "a block device file", which is confusing to me. Is it a "device", a "file", or both, or something else entirely?
 
-A device is any resource, be it ***physical***, ***silicon***, or ***virtual***, whose control and communication are managed by a component of the kernel called, "***a drive**r*".
+Because we have already explored this lore, I will cut directly to the point. Just like there is VFS, there is an abstraction for devices in Linux, called the "***Device Model***".
 
-  - "***Physical hardware devices***" are a real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.  "***Note: No need to understand what a bus is.***"
+As you might have guessed it already, we have to explore this "device model" thing in order to understand devices. That is, kind of depressing, given how exhausted we are, I agree, however, the good part is that we already understand the lore, so all we have to do is explore some details and we are done.
 
-  - "***CPU silicon capability***" are specialized hardware circuits and microcode built directly into the CPU processor die. For example, Intel's VT-x or random number generators.
+Let's start our journey in the "***Linux Device Model***".
 
-  - "***Pseudo devices***" are purely kernel software constructs that implement the device interface to provide OS services without any hardware behind them. For example, `/dev/null`, which discards all the data passed to it.
+## Linux Device Model
+
+Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel, just like files are more than bytes on a disk.
+
+A device is any ***resource*** whose control and communication are managed by a component of the kernel called, "***a driver***". The resource could be ***physical***, ***silicon***, or ***virtual***.
+
+  - "***Physical hardware devices***" are a real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.
+
+  - "***CPU silicon capability***" are specialized hardware circuits and microcode built directly into the CPU processor die. For example, Intel's Virtual Technology Extensions, i.e. VT-x, which backs the `/dev/kvm` device, or the hardware random number generators.
+
+  - "***Pseudo devices***" are purely software constructs built by the kernel and exposed as devices. No hardware backs them. `/dev/null` is the best example. It discards all the data passed to it.
 
 ---
 
-A device file (or node) exists on a pseudo filesystem in RAM, not on any hardware called, `devtmpfs`.
+We know that
+  1. regular files are made up of three components: a file, an inode and a resource backing them.
+  2. a storage filesystem manages the metadata about the data, among other things.
+  3. a storage filesystem doesn't know how to talk to the physical storage hardware directly.
+  4. their exist software that knows how to talk to the physical storage device.
+
+This component, the one that knows how to communicate with a NVMe SSD, is called an NVMe driver. It is defined as a kernel module: `nvme.ko`.
+
+## Kernel Module
+
+A kernel module is a compiled piece of binary code (`.ko`) that can be loaded into, or unloaded from, the running kernel on demand without rebooting the system or recompiling the kernel. It runs in Ring 0 (full hardware privileges) and has direct access to kernel memory and internal kernel APIs.
+
+Kernel modules are essentially plug-and-playable kernel components.
+
+The question we need to ask is "***why we need plug-and-playable kernel components? Why everything can not be baked into the kernel binary?***"
+
+---
+
+Every laptop configuration is different. Every PC configuration is different.
+  - Some has an integrated graphics card, the other comes with a dedicated graphics card.
+  - Some has a NVMe SSD, the other has a SATA SSD.
+  - Some has a `802.11n` WiFi adapter, the other has a `802.11ax` WiFi adapter.
+  - One has a Intel sound card, the other has a Realtek sound card.
+  - One has a 120Hz display, the other has a 165Hz display.
+  - The list can go on and on.....
+
+However, once purchased, it is fixed. But we can plug in new hardware externally. For example, a pen drive, a camera, a USB Hub, or a speaker.
+
+Now the question is "***what configuration a distro maker should build the kernel with such that it works everywhere?***" Do you know a universal configuration that can help them? The answer is likely NO.
+
+  - Yes, there is a basic set of features that are required by every build, however, as we have seen, the sky is the limit when it comes to hardware peripherals.
+  - The Linux kernel supports a humongous list of hardware. Does every build require it? NO.
+
+Therefore, we need a way to separate the core kernel from everything that is not a strict necessity.
+> *Remember that these components are essential for the kernel. The kernel that can function without them is not necessarily a kernel that is usable.*
+
+This is achieved by exporting the code as a ***kernel module***.
+
+---
+
+While building the kernel, we get three options for each feature:
+  1. Exclude it entirely.
+  2. Compile it as a kernel module.
+  3. Bake it directly into the core kernel binary.
+
+For example, the Linux kernel completely supports virtualization on x86_64 architecture. But the kernel can be built without the virtualization subsystem. The hardware supports it, but the OS kernel is simply not tapping on those capabilities, so the userspace can not access them.
+> *We are talking about KVM only. Other type-2 options remain available.*
+
+While the virtualization subsystem can be compiled out-of-tree, i.e. as a kernel module, the kernel must have module loading enabled. Otherwise, KVM is completely inaccessible.
+
+So, basically, the kernel can be kept lean by building only those features that are essential. Everything else can be compiled as a kernel module. These modules can be loaded and unloaded on demand.
+
+There is an advantage in that. Because the kernel is lean, there is less memory consumption. A module is loaded only when it is required and is unloaded when nothing is using it, keeping the resources free.
+
+---
+
+The next question is, "***why we have explored kernel modules?***"
+
+The kernel supports thousands of hardware devices. The software that knows how to communicate with the them, i.e. the driver, is often compiled as a kernel module.
+> *As mentioned already, it is not necessary.*
+
+That's why we needed to understand kernel module.
+
+Let's continue with the device model now.
+
+## The Linux Device Model
+
+The central pieces are "***devices***" and their "***drivers***".
+
+
+
+
+
+
+In modern Linux, a device file exists on a pseudo filesystem in RAM called, `devtmpfs`.
 
 A pseudo filesystem is a filesystem that lives entirely in RAM, backed by kernel memory. When the system powers off, it vanishes completely. When it powers on, it constructs it dynamically.
 
 `devtmpfs` is an in-memory filesystem mounted at `/dev`. Whenever a driver registers a device with the kernel (e.g. KVM registers /dev/kvm, or you plug in a USB drive), the kernel itself automatically creates a device node in `devtmpfs`.
 
 The `i_mode` has the `S_IFCHR` bit set if the inode is for a device file and the `*i_cdev` field in the last union points to the character device it is associated with.
-
-## The identity of a device
-
-A device is identified by a 32-bit integer called `dev_t`, which is split into two numbers: (Major, Minor).
-
-```
- 31                    20 19                               0
-┌────────────────────────┬──────────────────────────────────┐
-│   MAJOR NUMBER (12b)   │        MINOR NUMBER (20b)        │
-└────────────────────────┴──────────────────────────────────┘
-```
-
-The Major Number (Which Driver): Tells the kernel which driver handles this device.
-
-The Minor Number (Which Specific Instance): Tells that driver which specific instance or sub-device is being addressed.
 
 ---
 
@@ -1198,6 +1267,6 @@ struct miscdevice {
 
 anon_inode, devtmpfs, anonymous fs, char_device_struct {}
 
-# Take an example of a complete walk from userspace to kernel space
+# Take an example
 
 # Conclusion
