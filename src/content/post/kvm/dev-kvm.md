@@ -3,7 +3,7 @@ title: "What is /dev/kvm in KVM? <symlink>"
 publishDate: "2026-10-26"
 # updatedDate: "2026-M-D"
 description: "This text aims to understand the /dev/kvm device used in KVM."
-tags: [ linux-kvm ]
+tags: [ linux-arch, linux-kvm]
 draft: true
 ---
 
@@ -1116,11 +1116,11 @@ It's time to explore devices. Yeah, it's been a long time, but I can't help. I a
 
 # What is a device?
 
-If you remember the types of files, some of them have "device" in them like, "a block device file", which is confusing to me. Is it a "device", a "file", or both, or something else entirely?
+If you remember the types of files, some of them have the term "device" in them, like "a block device file". This is confusing to me. Is it a "device", a "file", or both, or something else entirely?
 
-Because we have already explored this lore, I will cut directly to the point. Just like there is VFS, there is an abstraction for devices in Linux, called the "***Device Model***".
+Because we have already explored this lore, I will cut directly to the point. Just like there is VFS, there is an abstraction for devices as well. It is called the "***Device Model***".
 
-As you might have guessed it already, we have to explore this "device model" thing in order to understand devices. That is, kind of depressing, given how exhausted we are, I agree, however, the good part is that we already understand the lore, so all we have to do is explore some details and we are done.
+As you might have guessed it already, we have to explore this "device model" thing in order to understand devices. That is, kind of depressing, given how exhausted we are, I agree, however, the good part is that we already understand the lore, so all we have to do is explore the details and we are done.
 
 Let's start our journey in the "***Linux Device Model***".
 
@@ -1128,7 +1128,7 @@ Let's start our journey in the "***Linux Device Model***".
 
 Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel, just like files are more than bytes on a disk.
 
-A device is any ***resource*** whose control and communication are managed by a component of the kernel called, "***a driver***". The resource could be ***physical***, ***silicon***, or ***virtual***.
+A device is any ***resource*** whose control and communication are managed by a component of the kernel called, "***a driver***". The resource could be '***physical***', '***silicon***', or '***virtual***'.
 
   - "***Physical hardware devices***" are a real piece of hardware plugged into an external or internal bus (PCIe, USB, I2C). For example, a NVMe SSD.
 
@@ -1144,62 +1144,179 @@ We know that
   3. a storage filesystem doesn't know how to talk to the physical storage hardware directly.
   4. their exist software that knows how to talk to the physical storage device.
 
-This component, the one that knows how to communicate with a NVMe SSD, is called an NVMe driver. It is defined as a kernel module: `nvme.ko`.
+For an NVMe SSD, the component that knows how to communicate with it is called an NVMe driver, which, in the Linux kernel, is defined as a kernel module, called `nvme.ko`.
+
+What is a kernel module?
 
 ## Kernel Module
 
-A kernel module is a compiled piece of binary code (`.ko`) that can be loaded into, or unloaded from, the running kernel on demand without rebooting the system or recompiling the kernel. It runs in Ring 0 (full hardware privileges) and has direct access to kernel memory and internal kernel APIs.
+A kernel module is a compiled piece of binary code (`.ko`) that can be loaded into, or unloaded from, the running kernel on demand without rebooting the system or recompiling the kernel. It runs in Ring 0 (full hardware privileges) and has direct access to the kernel memory and the kernel APIs.
 
-Kernel modules are essentially plug-and-playable kernel components.
+Kernel modules are essentially "***plug-and-playable***" kernel components.
 
-The question we need to ask is "***why we need plug-and-playable kernel components? Why everything can not be baked into the kernel binary?***"
+The question we need to ask is "***why we need plug-and-playable kernel components?"***
+
+This question can be answered by asking a question that is 180 degrees opposite to it. "***Why everything can not be baked into the kernel binary?***" Let's find out.
 
 ---
 
-Every laptop configuration is different. Every PC configuration is different.
+The configuration of every machine is different.
+  - Some has an Intel CPU, the other has an AMD CPU.
   - Some has an integrated graphics card, the other comes with a dedicated graphics card.
   - Some has a NVMe SSD, the other has a SATA SSD.
-  - Some has a `802.11n` WiFi adapter, the other has a `802.11ax` WiFi adapter.
+  - Some has a `802.11n` WiFi adapter (WIFI 4), the other has a `802.11ax` WiFi adapter (WIFI 6).
   - One has a Intel sound card, the other has a Realtek sound card.
   - One has a 120Hz display, the other has a 165Hz display.
-  - The list can go on and on.....
 
-However, once purchased, it is fixed. But we can plug in new hardware externally. For example, a pen drive, a camera, a USB Hub, or a speaker.
+The list is long. However, once purchased, it is fixed. But we can plug in new hardware externally. For example, a pen drive, a camera, a USB Hub, or a speaker.
 
-Now the question is "***what configuration a distro maker should build the kernel with such that it works everywhere?***" Do you know a universal configuration that can help them? The answer is likely NO.
+Now the question is "***what configuration a distro maker should build the kernel with such that it works everywhere?***" Do you know such a "***universal configuration***"? The answer is likely NO.
 
   - Yes, there is a basic set of features that are required by every build, however, as we have seen, the sky is the limit when it comes to hardware peripherals.
-  - The Linux kernel supports a humongous list of hardware. Does every build require it? NO.
-
-Therefore, we need a way to separate the core kernel from everything that is not a strict necessity.
-> *Remember that these components are essential for the kernel. The kernel that can function without them is not necessarily a kernel that is usable.*
-
-This is achieved by exporting the code as a ***kernel module***.
+  - The Linux kernel supports a humongous list of hardware, but does every build require the complete list? NO!
 
 ---
 
-While building the kernel, we get three options for each feature:
+The Linux kernel is an entity that supports a wide range of features, and they are supported such that the kernel remains hardware agnostic.
+
+The kernel provides three ways to build every single feature.
   1. Exclude it entirely.
-  2. Compile it as a kernel module.
+  2. Build it as a kernel module.
   3. Bake it directly into the core kernel binary.
 
-For example, the Linux kernel completely supports virtualization on x86_64 architecture. But the kernel can be built without the virtualization subsystem. The hardware supports it, but the OS kernel is simply not tapping on those capabilities, so the userspace can not access them.
-> *We are talking about KVM only. Other type-2 options remain available.*
+When you exclude a feature, you can't use it, even when the hardware supports it. Either you have to rebuild the kernel or build that feature as a kernel module, which involves some details that are beyond the scope of this exploration.
 
-While the virtualization subsystem can be compiled out-of-tree, i.e. as a kernel module, the kernel must have module loading enabled. Otherwise, KVM is completely inaccessible.
+When you build a feature as a kernel module, the code related to that feature resides in the storage device as a `.ko.xz` file (compressed binary). It is loaded when needed and removed when not.
 
-So, basically, the kernel can be kept lean by building only those features that are essential. Everything else can be compiled as a kernel module. These modules can be loaded and unloaded on demand.
-
-There is an advantage in that. Because the kernel is lean, there is less memory consumption. A module is loaded only when it is required and is unloaded when nothing is using it, keeping the resources free.
+When you bake a component directly into the core binary, it is always available in the kernel memory.
 
 ---
 
-The next question is, "***why we have explored kernel modules?***"
+A Linux distribution provider use these build features to provide a lean kernel binary in the ISO file. It only includes the core features and everything else is provided as a kernel module. We can verify this ourselves.
 
-The kernel supports thousands of hardware devices. The software that knows how to communicate with the them, i.e. the driver, is often compiled as a kernel module.
-> *As mentioned already, it is not necessary.*
+I use Debian 13.
+```bash
+$ uname -vrsm
+Linux 6.12.57+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05) x86_64
+```
 
-That's why we needed to understand kernel module.
+The name of kernel binary is `vmlinuz`. It is the compressed binary. The uncompressed binary is called `vmlinux`.
+
+If I search for `vmlinuz` on my system, I get this:
+```bash
+$ find / -name 2>/dev/null vmlinuz
+/vmlinuz
+```
+
+Checking its type:
+```bash
+$ file /vmlinuz
+/vmlinuz: symbolic link to boot/vmlinuz-6.12.57+deb13-amd64
+```
+.... it's a symlink.
+
+Let's check the target.
+```bash
+$ ls -lh /boot | grep vmlinuz-6.12.57+deb13-amd64
+-rw-r--r-- 1 root root 12M Nov  5  2025 vmlinuz-6.12.57+deb13-amd64
+
+$ file /boot/vmlinuz-6.12.57+deb13-amd64 -b | tr ',' '\n'
+
+Linux kernel x86 boot executable
+ bzImage
+ version 6.12.57+deb13-amd64 (debian-kernel@lists.debian.org) #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05)
+```
+> *Note that the output of `file` is very big, so I have truncated it to the first two pieces.*
+
+The compressed kernel binary is just 12 MB in size. But compression reduces the size of the input, which doesn't reflect the true kernel binary size. Therefore, we need to see the uncompressed binary, i.e. `vmlinux`.
+
+Distributions normally don't ship `vmlinux` alongside. At least Debian doesn't do it. I can't find one on my device. However, the kernel provides a way to extract `vmlinux` from `vmlinuz`.
+
+The kernel provides a script called `extract-vmlinux`. As with `vmlinux`, `extract-vmlinux` is not shipped by Debian. But because I have a copy of the source tree with me, I can access this script. You can download it from the kernel [source tree](https://github.com/torvalds/linux/blob/master/scripts/extract-vmlinux) and run it on your machine.
+
+```bash
+# extract-vmlinux  <path-to-vmlinuz>  > <path-to-output>
+$ ./linux-x86-tree/scripts/extract-vmlinux  /boot/vmlinuz-$(uname -r) > ./vmlinux-binary
+
+extract-vmlinux: Extracted vmlinux using 'unzstd' from offset 21197
+```
+
+Now inspect it.
+```bash
+$ file ./vmlinux-binary
+./vmlinux-binary: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, BuildID[sha1]=d29a7c458f7287e043337234ba4b434454b54ff2, stripped
+
+$ ls -lh ./vmlinux-binary
+-rw-rw-r-- 1 username username 55M Nov  7 12:19 ./vmlinux-binary
+```
+
+See the difference.
+  - The compressed binary is 12 MB.
+  - The uncompressed binary is 55 MB.
+  - The [complete installation](https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/) ISO for Debian 13.7.0 is 3.7 GB.
+
+This proves that the core Linux kernel build includes only the essential components. Everything else is provided as loadable kernel modules.
+
+---
+
+Now open the `/lib/modules` directory in a file manager. This is where the kernel modules reside.
+
+I have three kernel headers on my system. Let's check the latest one.
+```bash
+$ ls -l /lib/modules
+total 12
+drwxr-xr-x 2 root root 4096 Jan  1  2026 6.12.38+deb13-amd64
+drwxr-xr-x 4 root root 4096 Sep  7  2025 6.12.43+deb13-amd64
+drwxr-xr-x 3 root root 4096 Jan  1  2026 6.12.57+deb13-amd64
+```
+
+All the modules are available in `/lib/modules/6.12.57+deb13-amd64/kernel/`.
+  - In `./fs`, we an find so many filesystems. Every single directory contains a `.ko.xz` file, which is a compressed version of the kernel module.
+  - In `./arch/x86/kvm`, we can find `kvm.ko.xz`, `kvm-amd.ko.xz` and `kvm-intel.ko.xz`. These are the virtualization modules.
+  - In `./drivers/nvme/host`, we have `nvme.ko.xz` and `nvme-core.ko.xz`, among others.
+  - In `./drivers/virt/vboxguest`, there is `vboxguest.ko.xz`, which is used by virtual box.
+
+This is only a glimpse of it. That's why I recommend you to open this in a file manager and explore it silently.
+
+We can count the total number of modules present in my system.
+```bash
+# Method 1: Read all the ".ko*" files.
+$ find /lib/modules/$(uname -r)/ -name "*.ko*" | wc -l
+4227
+
+# Method 2: Read the number of lines in the kernel's
+# own bookkeeping of all the modules.
+wc -l /lib/modules/$(uname -r)/modules.order
+4227 /lib/modules/6.12.57+deb13-amd64/modules.order
+```
+
+Let that sink in. There are 4227 modules on my system. If I use `lsmod` to check the total number of modules currently in memory,
+```bash
+$ lsmod | wc -l
+203
+```
+.... it is 203. Only 4.8% of the modules are currently loaded into memory.
+
+If they were baked into the kernel binary, we can only imagine the memory it will consume, for absolutely no reason.
+
+That's why kernel modules exist.
+
+---
+
+Sigh. So, we have hardware devices and the drivers to communicate with them. These drivers are often compiled as kernel modules.
+
+When a device is plugged into the machine, the kernel detects it and loads the appropriate kernel module(s). How exactly? That's the next detail that we need to discover.
+
+## Discovery of Devices and Drivers
+
+Every hardware device carries a unique signature: a vendor ID and a product ID.
+
+When a device is plugged into the machine, the device announces its vendor ID and product ID to the kernel. The kernel creates a `struct device` in RAM containing these IDs.
+
+
+
+
+---
 
 Let's continue with the device model now.
 
