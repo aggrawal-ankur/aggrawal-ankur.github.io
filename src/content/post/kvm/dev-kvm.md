@@ -1305,16 +1305,135 @@ That's why kernel modules exist.
 
 Sigh. So, we have hardware devices and the drivers to communicate with them. These drivers are often compiled as kernel modules.
 
-When a device is plugged into the machine, the kernel detects it and loads the appropriate kernel module(s). How exactly? That's the next detail that we need to discover.
+When a device is plugged into the machine, the kernel detects it and loads the appropriate kernel module(s). How exactly? That's the next detail that we need to understand.
 
 ## Discovery of Devices and Drivers
 
-Every hardware device carries a unique signature: a vendor ID and a product ID.
+When a physical device is plugged into the machine, the kernel has to perform two tasks:
+  1. Detect the device.
+  2. Load the appropriate kernel module(s).
 
-When a device is plugged into the machine, the device announces its vendor ID and product ID to the kernel. The kernel creates a `struct device` in RAM containing these IDs.
+When the kernel boots afresh, it doesn't know any device, including the storage device. It is entirely in RAM.
+
+The kernel modules are on the storage device. Reading the storage device requires a driver, which exist as kernel module. A classic chicken-and-egg problem.
+
+We can solve this problem by building the storage driver (and other necessary drivers) into the kernel binary? Absolutely. We should absolutely do this when we build our own kernel and everything else. However, when a generic kernel is built, which is meant to run on thousands of different machines, we can't do this. The hardware is simply not known.
+
+So, how this chicken-and-egg problem is solved? First we need to know what already exist when the kernel is booted, before loading any driver?
+> *I don't know the kernel boot process. And I don't think it is required to be understood in the same rigor.*
+
+When we press the power button, the motherboard firmware (UEFI/BIOS) wakes up. It does some sorcery and eventually loads the compressed Linux kernel image (vmlinuz) in RAM. It is decompressed and the CPU starts executing it. It performs the initial setup like page table initialization, scheduler setup etc, and starts executing. No devices are known at this point, so there is no disk.
+> NEEDS VETTING.
+
+That's the initial state we need to build on.
+
+The kernel needs to discover the devices and load the appropriate modules. The modules are stored on a storage device. The driver that understands communicating with it is also on the same storage device.
+
+In simple words, we need the storage device driver. Along with it, we need the filesystem driver so that relevant data can be passed to the storage driver, as the driver only knows how to communicate with the device, the whereabouts aren't known to it.
+> *It is possible that a few other drivers are required as well. But we are concerned about the above ones only.*
+
+One way to solve this chicken-end-egg problem is ***bootstrapping***. It is clear that the kernel needs a basic set of modules in the memory before anything else. How about providing them directly?
+
+The `vmlinuz` binary was found in `/boot/`. If we list this directory, we can find a file named `initrd.img-(uname -r)`.
+```bash
+$ file /boot/initrd.img-$(uname -r)
+/boot/initrd.img-6.12.57+deb13-amd64: ASCII cpio archive (SVR4 with no CRC)
+```
+
+The `initrd` in `initrd.img-(uname -r)` stands for initial ram disk.
+> WHAT IS this initial ram disk?
+
+The kernel provides a utility to read the contents of this file. It is called `lsinitramfs`.
+> What is initramfs?
+
+We can read its contents like this:
+```bash
+$ lsinitramfs /boot/initrd.img-$(uname -r) | grep -E "nvme|ext" | grep -E ".ko"
+
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/common/nvme-auth.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/common/nvme-keyring.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-core.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-fabrics.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-fc.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-rdma.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-tcp.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvme-loop.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvmet-fc.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvmet.ko.xz
+usr/lib/modules/6.12.57+deb13-amd64/kernel/fs/ext4/ext4.ko.xz
+```
+
+We can notice that many nvme drivers are present in the `initrd` file, along with an ext4 driver. But what else does it contain?
+```bash
+$ lsinitramfs /boot/initrd.img-$(uname -r) | wc -l              
+1922
+```
+
+That's a lot, isn't it? Now list them all and put them in a file.
+```bash
+$ lsinitramfs /boot/initrd.img-$(uname -r) > output.txt
+```
+
+Open this file in a text editor and gloss over it. It will take some time, and I recommend you to invest it. Below are some of the entries that hold relevance to us.
+```
+usr/lib/modules/6.12.43+deb13-amd64/kernel/arch/x86/kvm/kvm.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/acpi/battery.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/acpi/fan.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/input/keyboard/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/input/mouse/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/ethernet/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/ipvlan/ipvlan.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/thunderbolt/thunderbolt_net.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/usb/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/nvme/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/thunderbolt/thunderbolt.ko.xz
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/tty/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/usb/*
+usr/lib/modules/6.12.43+deb13-amd64/kernel/fs/*
+
+init
+usr/bin/kmod
+usr/bin/udevadm
+usr/sbin/rmmod
+usr/sbin/modinfo
+usr/sbin/lsmod
+usr/sbin/insmod
+usr/sbin/init
+usr/sbin/depmod
+usr/sbin/chroot
+usr/bin/mknod
+
+usr/lib/modules/*
+usr/lib/udev/*
+```
+
+It is clear that the initramfs doesn't only contain compressed kernel module binaries, but many userspace tools as well. For the time being, we can ignore the userspace tools.
+
+We have started with loading only the essential modules. But initrd seems to be loading basically everything. Why?
+
+This initrd is generated locally while installing a Linux distribution.
+
+---
+
+Moving on, the kernel executes the `/init` binary.
+> Is that makes up the "init" process?
+> Can I see the src code of it? I want to see if it really runs modprobe nvme.
+
+It mounts the real root filesystem and replaces the temporary RAM filesystem (initramfs) with it.
+
+Now the kernel has all the necessary drivers loaded into RAM.
 
 
 
+
+
+
+
+
+- physical
+- silicon
+- virtual
 
 ---
 
