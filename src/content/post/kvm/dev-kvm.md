@@ -39,7 +39,9 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 8. This is purely an investigative work. I have used the source code to build this understanding and it is possible that my interpretation of certain details is not how the kernel authors/maintainers perceive them. If my interpretation feels incorrect, I welcome your perspective and corrections.
 
-9. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
+9. I have asked a total of XXXX questions here, and YYYY questions are something I have completely left because they are beyond the scope of this exploration.
+
+10. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
 
 ---
 
@@ -1063,9 +1065,9 @@ Whenever a specialized subsystem or driver takes control of an open file, its cu
 
 Let's have a look at some of these.
 
-[*/root/fs/ext4/file.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/ext4/file.c?h=v7.2.12#n908) defines `ext4_file_operations`, which provides implementations for operations that can be performed on a regular file residing on an ext4 filesystem.
+[*root/fs/ext4/file.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/ext4/file.c?h=v7.2.12#n908) defines `ext4_file_operations`, which provides implementations for operations that can be performed on a regular file residing on an ext4 filesystem.
 
-[*/root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n449) defines `def_chr_ops`, i.e. "default character device operations", which is the starter table for every single character device in Linux. It's only job is to find the actual operations implementation associated with the device and update the pointer to it.
+[*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n449) defines `def_chr_ops`, i.e. "default character device operations", which is the starter table for every single character device in Linux. It's only job is to find the actual operations implementation associated with the device and update the pointer to it.
 
 ---
 
@@ -1077,9 +1079,9 @@ This is the last detail we need to explore to complete our understanding of the 
 
 We will take the example of `(*read)`.
 
-Starting from line 1761 in [*/root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1761), there are some function declarations with the `vfs_*` prefix. As we go down, we can find `vfs_read` on line 2076.
+Starting from line 1761 in [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1761), there are some function declarations with the `vfs_*` prefix. As we go down, we can find `vfs_read` on line 2076.
 
-`vfs_read` is defined in [*/root/fs/read_write.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/read_write.c?h=v7.2.12#n554) starting from line 554. However, I want you to gloss over this file starting from line 483 up until 583. You will notice four functions with the word `read` in them: `new_sync_read`, `__kernel_read`, `kernel_read`, `vfs_read`, `ksys_read`.
+`vfs_read` is defined in [*root/fs/read_write.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/read_write.c?h=v7.2.12#n554) starting from line 554. However, I want you to gloss over this file starting from line 483 up until 583. You will notice four functions with the word `read` in them: `new_sync_read`, `__kernel_read`, `kernel_read`, `vfs_read`, `ksys_read`.
 
 Scroll 150 lines down to line 723 and you can see a `SYSCALL_DEFINEx` instruction.
 ```c
@@ -1200,7 +1202,8 @@ $ uname -vrsm
 Linux 6.12.57+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05) x86_64
 ```
 
-The name of kernel binary is `vmlinuz`. It is the compressed binary. The uncompressed binary is called `vmlinux`.
+The name of the kernel binary is `vmlinux`. It is compressed to reduce the size and reading time. Along with that, a piece of code is baked right before the main kernel binary starts. This makes up `vmlinuz`.
+> *We will explore what that code is soon.*
 
 If I search for `vmlinuz` on my system, I get this:
 ```bash
@@ -1313,40 +1316,99 @@ When a physical device is plugged into the machine, the kernel has to perform tw
   1. Detect the device.
   2. Load the appropriate kernel module(s).
 
+Before we explore this, I have a simple question.
+
 When the kernel boots afresh, it doesn't know any device, including the storage device. It is entirely in RAM.
 
 The kernel modules are on the storage device. Reading the storage device requires a driver, which exist as kernel module. A classic chicken-and-egg problem.
 
-We can solve this problem by building the storage driver (and other necessary drivers) into the kernel binary? Absolutely. We should absolutely do this when we build our own kernel and everything else. However, when a generic kernel is built, which is meant to run on thousands of different machines, we can't do this. The hardware is simply not known.
+We can solve this problem by building the storage driver (and other necessary drivers) into the kernel binary? Absolutely.
+  - We should definitely do this when we build a kernel for our machine.
+  - However, when a generic kernel is built, which is meant to run on different machines, we can't do this. The reason is the same: ***hardware is simply not known.***
 
-So, how this chicken-and-egg problem is solved? First we need to know what already exist when the kernel is booted, before loading any driver?
-> *I don't know the kernel boot process. And I don't think it is required to be understood in the same rigor.*
+So, how this chicken-and-egg problem is solved? First we need to know what already exist when the system boots afresh and `vmlinuz` is loaded in memory, before the need of a driver is raised.
 
-When we press the power button, the motherboard firmware (UEFI/BIOS) wakes up. It does some sorcery and eventually loads the compressed Linux kernel image (vmlinuz) in RAM. It is decompressed and the CPU starts executing it. It performs the initial setup like page table initialization, scheduler setup etc, and starts executing. No devices are known at this point, so there is no disk.
+---
+
+When we press the power button, the motherboard firmware (UEFI/BIOS) wakes up. It does some sorcery and eventually loads the compressed Linux kernel image (`vmlinuz`) in RAM. It is decompressed and the CPU starts executing it. It performs the initial setup like page table initialization, scheduler setup etc, and starts executing. No devices are known at this point, so there is no disk.
+
+That's the state before any device discovery or kernel module loading is initiated. Before we move on, here is another problem.
+
+Since `vmlinuz` is compressed, it needs to be decompressed before it becomes executable, which requires a decompression utility. Who supplies that?
+
+Earlier we have seen that the compressed `vmlinux` is combined with something to generate `vmlinuz`. That component is the decompressor. In other words, `vmlinuz` supplies its own decompressor. It is a self-extracting executable.
+
+Open [*root/arch/x86/boot/compressed/misc.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/boot/compressed/misc.c?h=v7.2.12). We can notice `decompress_kernel()` at line 344 and `*extract_kernel()` at line 407.
+
+In `extract_kernel()`, at line 514, we can see the following string: `"Decompressing Linux..."`. `extract_kernel()` calls `decompress_kernel()`, which calls `__decompress()` on the payload memory.
+
+If you search for the implementation of `__decompress`, you will find 7, all in the `root/lib/` directory. [See on GitHub](https://github.com/search?q=repo%3Atorvalds%2Flinux+%22__decompress(u%22&type=code).
+
+The implementations are in:
+  - lib/decompress_unlz4.c
+  - lib/decompress_inflate.c
+  - lib/decompress_unzstd.c
+  - lib/decompress_bunzip2.c
+  - lib/decompress_unlzo.c
+  - lib/decompress_unxz.c
+  - lib/decompress_unlzma.c
+
+If you notice, you will find some familiar names. For example, I am aware of bzip2, and bunzip is the opposite of it, i.e. b-un-zip2. Similarly, zstd and xz algorithms.
+
+Basically, the kernel supports 7 compression algorithms for this purpose. But why? I mean, the kernel is providing its own decompressor, so it is not dependent on any external utility. So it can stick to one single algorithm.
+
+  - All of these algorithms are of the same class. They compress and decompress the input. But they do it differently, with different priorities and trade-offs.
+  - For example, some offer speed, but trade compression ratio. Some offer good compression ratio at the cost of speed and memory requirements.
+  - Different environments have different needs, that's why the kernel supports a variety of these algorithms, so that each one algorithm is not imposed on every environment.
+  - For example, an environment that has limited memory would like to choose an algorithm that has less memory requirements.
 > NEEDS VETTING.
 
-That's the initial state we need to build on.
+---
 
-The kernel needs to discover the devices and load the appropriate modules. The modules are stored on a storage device. The driver that understands communicating with it is also on the same storage device.
+I am dumb enough to have one last question. Why do we compress `vmlinux` in the first place? Why don't we just provide it as it is, without any compression?
+
+In my case, the size of `vmlinux` was 55 MB and `vmlinuz` was 12 MB. I suppose `vmlinux` is already stripped of things like debug symbols and string tables. Anyways, the difference is significant.
+
+`vmlinux` lives on a storage drive and it has to be read from there. A storage device has some read/write speed.
+  - The higher the size, the more time it will take to read the contents from it.
+  - By reducing the size, we reduce the time it takes to read the contents from it.
+
+Modern CPUs are very fast. They can decompress data at a much faster rate.
+
+It is possible that the maintainers have noticed that reading a compressed binary from a storage device and decompressing it on the fly is faster enough than reading it uncompressed. That's a win-win situation. We have saved storage, and time.
+
+One more dumb question. Where does `vmlinuz` reside? On a storage drive? If yes, where does the storage driver and the filesystem driver to read it comes from?
+  - That's too much scouring for such a little question.
+  - It is part of boot sorcery. First, it is not black magic. Second, we don't need to understand it.
+
+---
+
+So, now that we understand how `vmlinuz` is formed and how it is decompressed and `vmlinux` is loaded into memory, we can move on to the next step, the chicken-and-egg problem.
+
+  - The kernel needs to discover the devices and load the appropriate modules.
+  - The modules are stored on a storage device.
+  - The driver that understands communicating with it is also on the same storage device.
 
 In simple words, we need the storage device driver. Along with it, we need the filesystem driver so that relevant data can be passed to the storage driver, as the driver only knows how to communicate with the device, the whereabouts aren't known to it.
 > *It is possible that a few other drivers are required as well. But we are concerned about the above ones only.*
 
 One way to solve this chicken-end-egg problem is ***bootstrapping***. It is clear that the kernel needs a basic set of modules in the memory before anything else. How about providing them directly?
 
-The `vmlinuz` binary was found in `/boot/`. If we list this directory, we can find a file named `initrd.img-(uname -r)`.
+The `vmlinuz` binary was found in `/boot/`. If we list this directory, we can find a file named `initrd.img-$(uname -r)`.
 ```bash
 $ file /boot/initrd.img-$(uname -r)
 /boot/initrd.img-6.12.57+deb13-amd64: ASCII cpio archive (SVR4 with no CRC)
 ```
 
-The `initrd` in `initrd.img-(uname -r)` stands for initial ram disk.
-> WHAT IS this initial ram disk?
+The `initrd` in `initrd.img-$(uname -r)` stands for initial ram disk. It is an archive containing a temporary, minimal root filesystem with essential drivers and scripts, which is loaded into RAM so the kernel can find and mount the real storage drive (among other things).
+
+`initramfs` is the modern replacement for `initrd`. It is a compressed archive containing a temporary, miniature operating system that the kernel unpacks directly into RAM during boot to load disk drivers and mount the real hard drive.
 
 The kernel provides a utility to read the contents of this file. It is called `lsinitramfs`.
-> What is initramfs?
 
-We can read its contents like this:
+The file named `initrd.img` on modern Linux is not actually an old-style `initrd` disk image; it is an `initramfs` archive, and the tool `lsinitramfs` unpacks and lists modern `initramfs` formats.
+
+Let's use it and read its contents:
 ```bash
 $ lsinitramfs /boot/initrd.img-$(uname -r) | grep -E "nvme|ext" | grep -E ".ko"
 
@@ -1366,16 +1428,24 @@ usr/lib/modules/6.12.57+deb13-amd64/kernel/fs/ext4/ext4.ko.xz
 
 We can notice that many nvme drivers are present in the `initrd` file, along with an ext4 driver. But what else does it contain?
 ```bash
-$ lsinitramfs /boot/initrd.img-$(uname -r) | wc -l              
+$ lsinitramfs /boot/initrd.img-$(uname -r) | wc -l
 1922
 ```
 
-That's a lot, isn't it? Now list them all and put them in a file.
+That's a lot, isn't it? Let's check if all of it is just modules.
+```bash
+$ lsinitramfs /boot/initrd.img-$(uname -r) | grep -E ".ko" | wc -l
+895
+```
+
+46.5% of this thing is flat kernel modules. What else is there? Let's list them all and put them in a file.
 ```bash
 $ lsinitramfs /boot/initrd.img-$(uname -r) > output.txt
 ```
 
-Open this file in a text editor and gloss over it. It will take some time, and I recommend you to invest it. Below are some of the entries that hold relevance to us.
+Open this file in a text editor and gloss over it. It will take some time, and I recommend you to invest it. You will notice a whole lot of kernel modules, directory entries and some utilities which are largely userspace programs.
+
+Some of the entries that hold relevance to us are:
 ```
 usr/lib/modules/6.12.43+deb13-amd64/kernel/arch/x86/kvm/kvm.ko.xz
 usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/acpi/battery.ko.xz
@@ -1408,17 +1478,66 @@ usr/lib/modules/*
 usr/lib/udev/*
 ```
 
-It is clear that the initramfs doesn't only contain compressed kernel module binaries, but many userspace tools as well. For the time being, we can ignore the userspace tools.
+Kernel modules makes sense. The directories they are present in makes sense too. Why userspace utilities?
+> For the time being, we can ignore the userspace tools.
 
-We have started with loading only the essential modules. But initrd seems to be loading basically everything. Why?
+We have started with loading only the "essential modules", but `initrd` seems to be loading basically everything. Why?
+  - The simplest explanation that isn't satisfactory even a bit is that modern systems are complex and this much bootstrapping is probably a necessity, that's the kernel does it.
+  - Another question the is beyond the scope of this pursuit.
 
-This initrd is generated locally while installing a Linux distribution.
+This `initrd.img` is generated locally while installing a Linux distribution. There are two modes in which it could be built.
+  1. **Generic mode**, where drivers for hundreds of hardware devices are built.
+  2. **Host-only mode**, where only the drivers required for the current hardware are built.
+
+We can also eliminate it if we can embed everything into the kernel binary itself.
+
+This `initrd.img` can be updated in userspace using specialized tools.
 
 ---
 
-Moving on, the kernel executes the `/init` binary.
-> Is that makes up the "init" process?
-> Can I see the src code of it? I want to see if it really runs modprobe nvme.
+Just close your eyes and think about it.
+  - The `initrd.img` is not fixed. It can modified in the userspace to our liking.
+  - The OS kernel binary, i.e. `vmlinux`, is not fixed either. We can rebuild the kernel to our liking and just replace the file in the `/boot` directory, along with a few other things that need to be done, and the kernel is updated.
+
+That's the genius of this philosophy.
+
+---
+
+So we have the bootstrapping code, i.e. `initrd.img` alongside the kernel binary, i.e. `vmlinux`. The motherboard has some primitives that allows reading `vmlinuz` and `initrd.img` into memory.
+
+The kernel binary is decompressed and starts executing. It starts with some assembly and then moves on to `start_kernel()` which is defined in [*root/init/main.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/init/main.c?h=v7.2.12#n977).
+
+It includes everything that the kernel initializes before creating the first userspace process, i.e. `init`. On line 1180, it calls `rest_init()`. On line 683, we can notice the kernel spawning the first userspace process, i.e. `init`.
+
+`kernel_init()` is define one line 1544. On line 1579, we can notice `ramdisk_execute_command`, which is a character pointer to `/init` defined on line 167.
+
+`run_init_process()` is defined on line 1462. It calls Linux kernel's internal implementation of the `execve` syscall, i.e. `kernel_execve()`, which is defined in [root/fs/exec.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/exec.c?h=v7.2.12#n1902).
+
+`kernel_execve()` prepares the binary parameters (`struct linux_binprm`) for `/init` and calls `bprm_execve()` defined on line 1777 in the same file. It calls `exec_binprm()` which is defined on line 1732 in the same file. It calls `search_binary_handler()`, which is defined on line 1698. It calls `fmt->load_binary(bprm)` on line 1717.
+
+By this time, you should know what this thing is. A thing similar to the `*_operations` structs. The type of `fmt` is `struct linux_binfmt`, which "defines the functions that are used to load the binary formats that linux accepts", in kernel's own words.
+
+The signature of this function pointer is:
+```c
+int (*load_binary)(struct linux_binprm *);
+```
+
+There are `static struct linux_binfmt` instances for different executable formats the kernel supports, including ELF. These instances are registered in the kernel using `register_binfmt()`, which adds them to kernel's global formats linked list. There is one defined for elf as well, on line 96 in [*root/fs/binfmt_elf.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/binfmt_elf.c?h=v7.2.12#n96). It is called `elf_format`.
+
+When `search_binary_handler()` loops over that list, it finds elf_format and calls its load_binary pointer (load_elf_binary).
+
+So, fmt->load_binary(bprm) resolves to `load_elf_binary(bprm)`, which is defined in [root/fs/binfmt_elf.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/binfmt_elf.c?h=v7.2.12#n832).
+
+It is a huge function, most of which is irrelevant for us. Scroll down to line 1379 and you will find `START_THREAD()`. That creates our `/init` process.
+
+`START_THREAD` is an alias to `start_thread`. The alias is defined in [root/include/linux/elf.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/elf.h?h=v7.2.12#n25). `start_thread` is defined in [root/arch/x86/kernel/process_64.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/kernel/process_64.c?h=v7.2.12#n581).
+
+`init` is created.
+
+
+CONTINUE FROM INIT
+
+
 
 It mounts the real root filesystem and replaces the temporary RAM filesystem (initramfs) with it.
 
