@@ -41,7 +41,13 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 9. I have asked a total of XXXX questions here, and YYYY questions are something I have completely left because they are beyond the scope of this exploration.
 
-10. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
+10. It is recommended to guard the scope of your exploration. Otherwise, you will never stop spiraling. This heavily applies to shiny objects. However, what about inward expansion of the scope?
+    - In my understanding, the advice works great to protect from outward expanding scope. But when the scope increases in terms of depth, it is harder to control it.
+    - So far, the only way I know to deal with it is by embracing it. Whatever comes, I explore, capture it and churn it. If it survives, great. If it doesn't, great.
+
+    For this reason, a lot of things are just declarative here. While I myself have dug into them to be sure about what I am writing, I have consciously chosen to conceal those details. They become noise.
+
+11. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
 
 ---
 
@@ -1128,7 +1134,7 @@ Let's start our journey in the "***Linux Device Model***".
 
 ## Linux Device Model
 
-Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader in the kernel, just like files are more than bytes on a disk.
+Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader, just like files are more than bytes on a disk.
 
 A device is any ***resource*** whose control and communication are managed by a component of the kernel called, "***a driver***". The resource could be '***physical***', '***silicon***', or '***virtual***'.
 
@@ -1146,9 +1152,9 @@ We know that
   3. a storage filesystem doesn't know how to talk to the physical storage hardware directly.
   4. their exist software that knows how to talk to the physical storage device.
 
-For an NVMe SSD, the component that knows how to communicate with it is called an NVMe driver, which, in the Linux kernel, is defined as a kernel module, called `nvme.ko`.
+For an NVMe SSD, the component that knows how to communicate with it is called an NVMe driver, which, in the Linux kernel, is defined as a set of kernel modules, one of which is `nvme.ko`.
 
-What is a kernel module?
+Kernel modules are the first thing we need to understand.
 
 ## Kernel Module
 
@@ -1188,7 +1194,7 @@ The kernel provides three ways to build every single feature.
 
 When you exclude a feature, you can't use it, even when the hardware supports it. Either you have to rebuild the kernel or build that feature as a kernel module, which involves some details that are beyond the scope of this exploration.
 
-When you build a feature as a kernel module, the code related to that feature resides in the storage device as a `.ko.xz` file (compressed binary). It is loaded when needed and removed when not.
+When you build a feature as a kernel module, the code related to that feature resides in the storage device as a `.ko.xz` file (compressed kernel module binary). It is loaded when needed and removed when not.
 
 When you bake a component directly into the core binary, it is always available in the kernel memory.
 
@@ -1205,49 +1211,44 @@ Linux 6.12.57+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05) x
 The name of the kernel binary is `vmlinux`. It is compressed to reduce the size and reading time. Along with that, a piece of code is baked right before the main kernel binary starts. This makes up `vmlinuz`.
 > *We will explore what that code is soon.*
 
-If I search for `vmlinuz` on my system, I get this:
+Let's locate `vmlinuz` on my system.
 ```bash
 $ find / -name 2>/dev/null vmlinuz
 /vmlinuz
-```
 
-Checking its type:
-```bash
 $ file /vmlinuz
 /vmlinuz: symbolic link to boot/vmlinuz-6.12.57+deb13-amd64
 ```
-.... it's a symlink.
 
-Let's check the target.
+So it's a symlink. Let's check the target.
 ```bash
 $ ls -lh /boot | grep vmlinuz-6.12.57+deb13-amd64
 -rw-r--r-- 1 root root 12M Nov  5  2025 vmlinuz-6.12.57+deb13-amd64
 
 $ file /boot/vmlinuz-6.12.57+deb13-amd64 -b | tr ',' '\n'
-
 Linux kernel x86 boot executable
  bzImage
  version 6.12.57+deb13-amd64 (debian-kernel@lists.debian.org) #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05)
+ ....
 ```
-> *Note that the output of `file` is very big, so I have truncated it to the first two pieces.*
 
-The compressed kernel binary is just 12 MB in size. But compression reduces the size of the input, which doesn't reflect the true kernel binary size. Therefore, we need to see the uncompressed binary, i.e. `vmlinux`.
+The compressed kernel binary is just 12 MB in size. But compression reduces the size of the input, which doesn't reflect the true kernel binary. Therefore, we need to see the uncompressed binary.
 
-Distributions normally don't ship `vmlinux` alongside. At least Debian doesn't do it. I can't find one on my device. However, the kernel provides a way to extract `vmlinux` from `vmlinuz`.
+Distributions normally don't ship `vmlinux` alongside. However, the kernel provides a script, called `extract-vmlinux`, to extract `vmlinux` from `vmlinuz`.
 
-The kernel provides a script called `extract-vmlinux`. As with `vmlinux`, `extract-vmlinux` is not shipped by Debian. But because I have a copy of the source tree with me, I can access this script. You can download it from the kernel [source tree](https://github.com/torvalds/linux/blob/master/scripts/extract-vmlinux) and run it on your machine.
+This script is available in the kernel source tree at [*root/scripts/extract-vmlinux*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/scripts/extract-vmlinux?h=v7.2.12). You can download and run it on your machine.
 
+Below are the results.
 ```bash
-# extract-vmlinux  <path-to-vmlinuz>  > <path-to-output>
-$ ./linux-x86-tree/scripts/extract-vmlinux  /boot/vmlinuz-$(uname -r) > ./vmlinux-binary
-
+# extract-vmlinux  <path-to-vmlinuz>  >  <path-to-output>
+$ ./linux-x86-tree/scripts/extract-vmlinux  \
+    /boot/vmlinuz-$(uname -r) > ./vmlinux-binary
 extract-vmlinux: Extracted vmlinux using 'unzstd' from offset 21197
-```
 
-Now inspect it.
-```bash
 $ file ./vmlinux-binary
-./vmlinux-binary: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, BuildID[sha1]=d29a7c458f7287e043337234ba4b434454b54ff2, stripped
+./vmlinux-binary: ELF 64-bit LSB executable, x86-64, version 1 (SYSV),
+statically linked, BuildID[sha1]=d29a7c458f7287e043337234ba4b434454b54ff2,
+stripped
 
 $ ls -lh ./vmlinux-binary
 -rw-rw-r-- 1 username username 55M Nov  7 12:19 ./vmlinux-binary
@@ -1258,7 +1259,7 @@ See the difference.
   - The uncompressed binary is 55 MB.
   - The [complete installation](https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/) ISO for Debian 13.7.0 is 3.7 GB.
 
-This proves that the core Linux kernel build includes only the essential components. Everything else is provided as loadable kernel modules.
+This proves that the core Linux kernel build includes only the essential components. Everything else is provided as kernel modules.
 
 ---
 
@@ -1274,12 +1275,12 @@ drwxr-xr-x 3 root root 4096 Jan  1  2026 6.12.57+deb13-amd64
 ```
 
 All the modules are available in `/lib/modules/6.12.57+deb13-amd64/kernel/`.
-  - In `./fs`, we an find so many filesystems. Every single directory contains a `.ko.xz` file, which is a compressed version of the kernel module.
+  - In `./fs`, we an find so many filesystem directories, each containing a `.ko.xz` file.
   - In `./arch/x86/kvm`, we can find `kvm.ko.xz`, `kvm-amd.ko.xz` and `kvm-intel.ko.xz`. These are the virtualization modules.
   - In `./drivers/nvme/host`, we have `nvme.ko.xz` and `nvme-core.ko.xz`, among others.
   - In `./drivers/virt/vboxguest`, there is `vboxguest.ko.xz`, which is used by virtual box.
 
-This is only a glimpse of it. That's why I recommend you to open this in a file manager and explore it silently.
+This is only a glimpse of it. That's why I recommend you to open this in a file manager and explore it yourself.
 
 We can count the total number of modules present in my system.
 ```bash
@@ -1298,9 +1299,7 @@ Let that sink in. There are 4227 modules on my system. If I use `lsmod` to check
 $ lsmod | wc -l
 203
 ```
-.... it is 203. Only 4.8% of the modules are currently loaded into memory.
-
-If they were baked into the kernel binary, we can only imagine the memory it will consume, for absolutely no reason.
+.... it is 203. Only ~5% of the modules are currently loaded into memory. If they were baked into the kernel binary, we can only imagine the memory it will consume, for absolutely no reason.
 
 That's why kernel modules exist.
 
@@ -1316,56 +1315,73 @@ When a physical device is plugged into the machine, the kernel has to perform tw
   1. Detect the device.
   2. Load the appropriate kernel module(s).
 
-Before we explore this, I have a simple question.
+When the kernel boots afresh, it is entirely in RAM. No device exist in that moment.
 
-When the kernel boots afresh, it doesn't know any device, including the storage device. It is entirely in RAM.
+As discussed, `vmlinux` contains only the core kernel, but that is not usable. We need a proper environment. For example:
+  - We need a userspace to run applications.
+  - We need devices so that we can use mouse and keyboard.
 
-The kernel modules are on the storage device. Reading the storage device requires a driver, which exist as kernel module. A classic chicken-and-egg problem.
+"***Where does it all come from?***" The answer is simple and doesn't require any reasoning. It exists on the storage device.
 
-We can solve this problem by building the storage driver (and other necessary drivers) into the kernel binary? Absolutely.
-  - We should definitely do this when we build a kernel for our machine.
-  - However, when a generic kernel is built, which is meant to run on different machines, we can't do this. The reason is the same: ***hardware is simply not known.***
+  - So, we need to read the storage device to get the drivers corresponding to the devices the kernel supports and the utilities that makes the userspace.
+  - To read the storage device, we need the storage device drivers, along with the filesystem driver that storage device (or the partition on which the OS stuff exists) is formatted in.
 
-So, how this chicken-and-egg problem is solved? First we need to know what already exist when the system boots afresh and `vmlinuz` is loaded in memory, before the need of a driver is raised.
+This is a classic example of the "***chicken-and-egg***" problem.
 
----
+The best solution would be baking everything into the kernel binary, right? When everything exists, there is no drama to mediate. However, it is unlikely to be an efficient solution, and we need not to discuss why.
 
-When we press the power button, the motherboard firmware (UEFI/BIOS) wakes up. It does some sorcery and eventually loads the compressed Linux kernel image (`vmlinuz`) in RAM. It is decompressed and the CPU starts executing it. It performs the initial setup like page table initialization, scheduler setup etc, and starts executing. No devices are known at this point, so there is no disk.
-
-That's the state before any device discovery or kernel module loading is initiated. Before we move on, here is another problem.
-
-Since `vmlinuz` is compressed, it needs to be decompressed before it becomes executable, which requires a decompression utility. Who supplies that?
-
-Earlier we have seen that the compressed `vmlinux` is combined with something to generate `vmlinuz`. That component is the decompressor. In other words, `vmlinuz` supplies its own decompressor. It is a self-extracting executable.
-
-Open [*root/arch/x86/boot/compressed/misc.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/boot/compressed/misc.c?h=v7.2.12). We can notice `decompress_kernel()` at line 344 and `*extract_kernel()` at line 407.
-
-In `extract_kernel()`, at line 514, we can see the following string: `"Decompressing Linux..."`. `extract_kernel()` calls `decompress_kernel()`, which calls `__decompress()` on the payload memory.
-
-If you search for the implementation of `__decompress`, you will find 7, all in the `root/lib/` directory. [See on GitHub](https://github.com/search?q=repo%3Atorvalds%2Flinux+%22__decompress(u%22&type=code).
-
-The implementations are in:
-  - lib/decompress_unlz4.c
-  - lib/decompress_inflate.c
-  - lib/decompress_unzstd.c
-  - lib/decompress_bunzip2.c
-  - lib/decompress_unlzo.c
-  - lib/decompress_unxz.c
-  - lib/decompress_unlzma.c
-
-If you notice, you will find some familiar names. For example, I am aware of bzip2, and bunzip is the opposite of it, i.e. b-un-zip2. Similarly, zstd and xz algorithms.
-
-Basically, the kernel supports 7 compression algorithms for this purpose. But why? I mean, the kernel is providing its own decompressor, so it is not dependent on any external utility. So it can stick to one single algorithm.
-
-  - All of these algorithms are of the same class. They compress and decompress the input. But they do it differently, with different priorities and trade-offs.
-  - For example, some offer speed, but trade compression ratio. Some offer good compression ratio at the cost of speed and memory requirements.
-  - Different environments have different needs, that's why the kernel supports a variety of these algorithms, so that each one algorithm is not imposed on every environment.
-  - For example, an environment that has limited memory would like to choose an algorithm that has less memory requirements.
-> NEEDS VETTING.
+To find the efficient solution, we need to understand the problem.
 
 ---
 
-I am dumb enough to have one last question. Why do we compress `vmlinux` in the first place? Why don't we just provide it as it is, without any compression?
+For the time being, it feels like all we need is the storage driver and the filesystem driver, and we are done. However, modern systems are very complex and it is unlikely to stop here. I will give you one example.
+
+  - Linux allows you to encrypt the storage device. It allows you to gate it behind a passphrase.
+  - Do you think the storage and fs drivers will be enough? You need the drivers for decryption. You need the drivers to read the keyboard. You need the drivers to display this stuff on the screen.
+
+The more complex the system configuration gets, the more drivers we need. Therefore, it is not just about storage and fs drivers, and that's why it is not realistic to bake everything into the kernel binary.
+
+  - Why a system with limited resources and a simple configuration pay the price of a bloated kernel?
+  - Why a system with enough resources load everything statically and waste its resources?
+
+A custom kernel build is definitely the answer. But it doesn't apply everywhere. People who are just switching to Linux, who are neither tech savvy, nor planning to become so, look for a "***set it, forget it***" solution.
+
+---
+
+It is clear that a bunch of modules will not solve this issue. The kernel needs a lot of stuff. The only problem that remains is how we are supposed to bring that into RAM.
+
+We can have a compressed archive of all the things that are required, but the problem remains the same. How we are going to bring that into memory from the storage device!
+
+Think about it. What else is a compressed file that is successfully brought into memory from the storage device without any drama? I hope you have thought about `vmlinuz`.
+
+We have never questioned how `vmlinuz` is loaded into memory when it also exists on the same storage device. If `vmlinuz` can be loaded, so as this is compressed archive.
+
+The answer is in the boot process. The motherboard firmware has its own primitives to read a storage device. It reads the bootloader, which reads `vmlinuz` and that compressed archive into memory.
+> *The boot process is an expedition in itself. Therefore, it is in the best of our interest to stop here. Otherwise, one-by-one, we have to peel back the whole kernel. That's too much scouring for such a simple question, and we are already quite deep into it.*
+
+---
+
+So, the problem is solved. We have the compressed kernel binary and a compressed archive containing everything that is required to move forward.
+
+Technically, we are ready for the next step. However, I have another question.
+
+The kernel binary and the supporting environment is provided as compressed archives. "***Who will decompress them?***" This is not a userspace environment where we have decompressor utilities.
+
+Earlier we have seen that the compressed `vmlinux` is combined with something to generate `vmlinuz`. That is the decompressor. In other words, `vmlinuz` supplies its own decompressor. It is a self-extracting executable.
+
+But who decompresses the decompressor itself, as it is a part of `vmlinuz`, which is a compressed archive.
+
+I won't get into it, but the short answer is, the decompressor isn't compressed.
+```
+vmlinuz = (normal-decompressor) + (compressed-kernel)
+```
+
+Therefore, the decompressor runs normally and consumes the compressed kernel as its payload, decompresses it and loads it into the memory. Once done, it jumps on the kernel's entry point.
+> *I have skipped the details because they aren't relevant.*
+
+---
+
+I am dumb enough to ask "***why do we compress `vmlinux` in the first place?" Why don't we just provide it as it is, without any compression?***
 
 In my case, the size of `vmlinux` was 55 MB and `vmlinuz` was 12 MB. I suppose `vmlinux` is already stripped of things like debug symbols and string tables. Anyways, the difference is significant.
 
@@ -1377,22 +1393,14 @@ Modern CPUs are very fast. They can decompress data at a much faster rate.
 
 It is possible that the maintainers have noticed that reading a compressed binary from a storage device and decompressing it on the fly is faster enough than reading it uncompressed. That's a win-win situation. We have saved storage, and time.
 
-One more dumb question. Where does `vmlinuz` reside? On a storage drive? If yes, where does the storage driver and the filesystem driver to read it comes from?
-  - That's too much scouring for such a little question.
-  - It is part of boot sorcery. First, it is not black magic. Second, we don't need to understand it.
-
 ---
 
-So, now that we understand how `vmlinuz` is formed and how it is decompressed and `vmlinux` is loaded into memory, we can move on to the next step, the chicken-and-egg problem.
+Let's talk about the "environment" that is loaded alongside `vmlinuz`. And WHY we need to do that!
 
-  - The kernel needs to discover the devices and load the appropriate modules.
-  - The modules are stored on a storage device.
-  - The driver that understands communicating with it is also on the same storage device.
+CONTINUE FROM HERE
 
-In simple words, we need the storage device driver. Along with it, we need the filesystem driver so that relevant data can be passed to the storage driver, as the driver only knows how to communicate with the device, the whereabouts aren't known to it.
-> *It is possible that a few other drivers are required as well. But we are concerned about the above ones only.*
 
-One way to solve this chicken-end-egg problem is ***bootstrapping***. It is clear that the kernel needs a basic set of modules in the memory before anything else. How about providing them directly?
+
 
 The `vmlinuz` binary was found in `/boot/`. If we list this directory, we can find a file named `initrd.img-$(uname -r)`.
 ```bash
@@ -1535,15 +1543,11 @@ It is a huge function, most of which is irrelevant for us. Scroll down to line 1
 `init` is created.
 
 
-CONTINUE FROM INIT
-
 
 
 It mounts the real root filesystem and replaces the temporary RAM filesystem (initramfs) with it.
 
 Now the kernel has all the necessary drivers loaded into RAM.
-
-
 
 
 
