@@ -1150,38 +1150,54 @@ We know that
   1. regular files are made up of three components: a file, an inode and a resource backing them.
   2. a storage filesystem manages the metadata about the data, among other things.
   3. a storage filesystem doesn't know how to talk to the physical storage hardware directly.
-  4. their exist software that knows how to talk to the physical storage device.
+  4. their exist a software that knows how to talk to the physical storage device.
 
-For an NVMe SSD, the component that knows how to communicate with it is called an NVMe driver, which, in the Linux kernel, is defined as a set of kernel modules, one of which is `nvme.ko`.
+To communicate with an NVMe SSD, we need a set of drivers which are defined as kernel modules.
 
-Kernel modules are the first thing we need to understand.
+Therefore, kernel modules are the first thing we need to understand.
 
-## Kernel Module
+## Kernel Modules
 
 A kernel module is a compiled piece of binary code (`.ko`) that can be loaded into, or unloaded from, the running kernel on demand without rebooting the system or recompiling the kernel. It runs in Ring 0 (full hardware privileges) and has direct access to the kernel memory and the kernel APIs.
 
 Kernel modules are essentially "***plug-and-playable***" kernel components.
 
-The question we need to ask is "***why we need plug-and-playable kernel components?"***
+The question we need to ask is "***why we need plug-and-playable kernel components?"*** It is opposite to building everything in the core kernel binary.
 
-This question can be answered by asking a question that is 180 degrees opposite to it. "***Why everything can not be baked into the kernel binary?***" Let's find out.
+Let's find out.
 
 ---
 
 The configuration of every machine is different.
-  - Some has an Intel CPU, the other has an AMD CPU.
-  - Some has an integrated graphics card, the other comes with a dedicated graphics card.
   - Some has a NVMe SSD, the other has a SATA SSD.
   - Some has a `802.11n` WiFi adapter (WIFI 4), the other has a `802.11ax` WiFi adapter (WIFI 6).
-  - One has a Intel sound card, the other has a Realtek sound card.
+  - One has an Intel sound card, the other has a Realtek sound card.
   - One has a 120Hz display, the other has a 165Hz display.
 
 The list is long. However, once purchased, it is fixed. But we can plug in new hardware externally. For example, a pen drive, a camera, a USB Hub, or a speaker.
 
-Now the question is "***what configuration a distro maker should build the kernel with such that it works everywhere?***" Do you know such a "***universal configuration***"? The answer is likely NO.
+Now the question is, "***what configuration a distro maker should build the kernel with such that it works everywhere?***" Not sure, but baking everything into the kernel could be that configuration? Yes.
+  - However, it makes the kernel binary unnecessarily huge. Most of the contents will consume memory without any use.
+  - Not every build requires every feature that the kernel supports. Also, systems with limited resources won't be able to afford it.
 
-  - Yes, there is a basic set of features that are required by every build, however, as we have seen, the sky is the limit when it comes to hardware peripherals.
-  - The Linux kernel supports a humongous list of hardware, but does every build require the complete list? NO!
+So, baking everything into the kernel is not a feasible idea. What else could be done?
+
+---
+
+There are a basic set of features, like the scheduler and memory management, which are required by every build. The rest depends on the system configuration.
+
+For example, if the machine doesn't have an ethernet port, why bother building it in the core binary?
+  - We can definitely use a "USB to Ethernet" dongle, but does that mean we should bake the support in the core binary?
+  - Again, we can, but whether we should, is the question.
+
+The basic features, like the scheduler, needs to exist in the memory as long as the system is live. On the other hand, many features are required only when a need arises. When the need is fulfilled, they are no longer required to exist in memory.
+
+So, how about separating the core kernel with everything that is not mandatory to exist all the time?
+  - The core binary will remain truly core.
+  - The features can be built as components that can be loaded on demand and shelved when the demand is fulfilled.
+  - The memory saved here remains utilizable elsewhere.
+
+That is the idea behind kernel modules. That's why we need kernel modules.
 
 ---
 
@@ -1192,7 +1208,7 @@ The kernel provides three ways to build every single feature.
   2. Build it as a kernel module.
   3. Bake it directly into the core kernel binary.
 
-When you exclude a feature, you can't use it, even when the hardware supports it. Either you have to rebuild the kernel or build that feature as a kernel module, which involves some details that are beyond the scope of this exploration.
+When you exclude a feature, you can't use it, even when the hardware supports it. Either you have to rebuild the kernel or build that feature as a kernel module.
 
 When you build a feature as a kernel module, the code related to that feature resides in the storage device as a `.ko.xz` file (compressed kernel module binary). It is loaded when needed and removed when not.
 
@@ -1205,11 +1221,13 @@ A Linux distribution provider use these build features to provide a lean kernel 
 I use Debian 13.
 ```bash
 $ uname -vrsm
-Linux 6.12.57+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05) x86_64
+
+Linux 6.12.57+deb13-amd64 
+#1 SMP PREEMPT_DYNAMIC Debian 6.12.57-1 (2025-11-05) x86_64
 ```
 
-The name of the kernel binary is `vmlinux`. It is compressed to reduce the size and reading time. Along with that, a piece of code is baked right before the main kernel binary starts. This makes up `vmlinuz`.
-> *We will explore what that code is soon.*
+The name of the kernel binary is `vmlinux`. It is compressed and a piece of code is baked right before it, making up `vmlinuz`.
+> *We will touch it later.*
 
 Let's locate `vmlinuz` on my system.
 ```bash
@@ -1232,7 +1250,7 @@ Linux kernel x86 boot executable
  ....
 ```
 
-The compressed kernel binary is just 12 MB in size. But compression reduces the size of the input, which doesn't reflect the true kernel binary. Therefore, we need to see the uncompressed binary.
+The compressed kernel binary is just 12 MB in size. What about the uncompressed kernel binary?
 
 Distributions normally don't ship `vmlinux` alongside. However, the kernel provides a script, called `extract-vmlinux`, to extract `vmlinux` from `vmlinuz`.
 
@@ -1259,28 +1277,20 @@ See the difference.
   - The uncompressed binary is 55 MB.
   - The [complete installation](https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/) ISO for Debian 13.7.0 is 3.7 GB.
 
-This proves that the core Linux kernel build includes only the essential components. Everything else is provided as kernel modules.
-
 ---
 
 Now open the `/lib/modules` directory in a file manager. This is where the kernel modules reside.
-
-I have three kernel headers on my system. Let's check the latest one.
 ```bash
 $ ls -l /lib/modules
 total 12
-drwxr-xr-x 2 root root 4096 Jan  1  2026 6.12.38+deb13-amd64
-drwxr-xr-x 4 root root 4096 Sep  7  2025 6.12.43+deb13-amd64
 drwxr-xr-x 3 root root 4096 Jan  1  2026 6.12.57+deb13-amd64
 ```
 
-All the modules are available in `/lib/modules/6.12.57+deb13-amd64/kernel/`.
-  - In `./fs`, we an find so many filesystem directories, each containing a `.ko.xz` file.
-  - In `./arch/x86/kvm`, we can find `kvm.ko.xz`, `kvm-amd.ko.xz` and `kvm-intel.ko.xz`. These are the virtualization modules.
+All the modules are available inside this directory. It is possible that your system has more than one of them, but only one is loaded into memory.
+  - In `./fs`, we can find all the supported filesystem directories, each containing a `.ko.xz` file.
+  - In `./arch/x86/kvm`, we can find the virtualization modules, i.e. `kvm.ko.xz`, `kvm-amd.ko.xz` and `kvm-intel.ko.xz`.
   - In `./drivers/nvme/host`, we have `nvme.ko.xz` and `nvme-core.ko.xz`, among others.
   - In `./drivers/virt/vboxguest`, there is `vboxguest.ko.xz`, which is used by virtual box.
-
-This is only a glimpse of it. That's why I recommend you to open this in a file manager and explore it yourself.
 
 We can count the total number of modules present in my system.
 ```bash
@@ -1299,332 +1309,57 @@ Let that sink in. There are 4227 modules on my system. If I use `lsmod` to check
 $ lsmod | wc -l
 203
 ```
-.... it is 203. Only ~5% of the modules are currently loaded into memory. If they were baked into the kernel binary, we can only imagine the memory it will consume, for absolutely no reason.
+.... it is 203. That's ~5% of the total modules on my system. If they were baked into the kernel binary, we can only imagine the memory it will consume, for absolutely no reason.
 
-That's why kernel modules exist.
+I recommend you to open this in a file manager and explore it yourself.
+
+This proves that `vmlinux` includes only the core components and everything else is provided as a kernel module.
+
+That's kernel modules for you.
 
 ---
 
-Sigh. So, we have hardware devices and the drivers to communicate with them. These drivers are often compiled as kernel modules.
+So, we have hardware devices and the drivers to communicate with them. These drivers are often compiled as kernel modules.
 
 When a device is plugged into the machine, the kernel detects it and loads the appropriate kernel module(s). How exactly? That's the next detail that we need to understand.
 
 ## Discovery of Devices and Drivers
 
+Before we continue, I want to say something. It is possible for you to have some questions. Although I can't read your mind, because I have gone on a long detour here, I am aware of some of these questions.
+
+  - How is `vmlinuz` read when no drivers exist, as `vmlinuz` is also on the storage device? This sorcery is handled by the bootloader and the firmware.
+  - If `vmlinuz` can be read, why not everything else that is required to complete the environment? Yeah, it is read the way `vmlinuz` is read.
+  - If `vmlinux` is compressed, who decompresses it? Where does the decompressor come from? The tiny code that goes before the compressed `vmlinux` in `vmlinuz` is the decompressor. It is not compressed, so it can execute directly. It takes the compressed `vmlinux` as input, decompresses it and loads it into memory.
+  - Why do we compress `vmlinux` in the first place? Small files can be read faster. But then we have to decompress them, which is not free? It is possible that whoever designed it observed that reading a compressed archive and decompressing it in memory is faster than reading an uncompressed file.
+  - Does this "environment" thing have a name? It is named `initrd.img` and is present in the same location as `vmlinuz`. There is something called `initramfs` as well.
+  - What is the difference between `initrd.img` and `initramfs`? I don't have the bandwidth to process it.
+
+Why have I mentioned these? I hate it when I have questions but the writing doesn't acknowledge them or guide if they are relevant to the pursuit or not.
+
+I want to say that these questions are great, but not relevant to our pursuit. We can explore them for a greater understanding from the perspective of the boot process. However, they are not "***a necessity***". You can safely move on.
+
+It is possible that you have a question which is genuinely relevant here. In that case, please explore it yourself, and tell me about it, so that I can evaluate it and add it if required.
+
+---
+
 When a physical device is plugged into the machine, the kernel has to perform two tasks:
   1. Detect the device.
-  2. Load the appropriate kernel module(s).
+  2. Load the appropriate kernel modules.
 
-When the kernel boots afresh, it is entirely in RAM. No device exist in that moment.
+Let's see how a device is detected.
 
-As discussed, `vmlinux` contains only the core kernel, but that is not usable. We need a proper environment. For example:
-  - We need a userspace to run applications.
-  - We need devices so that we can use mouse and keyboard.
 
-"***Where does it all come from?***" The answer is simple and doesn't require any reasoning. It exists on the storage device.
 
-  - So, we need to read the storage device to get the drivers corresponding to the devices the kernel supports and the utilities that makes the userspace.
-  - To read the storage device, we need the storage device drivers, along with the filesystem driver that storage device (or the partition on which the OS stuff exists) is formatted in.
 
-This is a classic example of the "***chicken-and-egg***" problem.
 
-The best solution would be baking everything into the kernel binary, right? When everything exists, there is no drama to mediate. However, it is unlikely to be an efficient solution, and we need not to discuss why.
-
-To find the efficient solution, we need to understand the problem.
 
 ---
-
-For the time being, it feels like all we need is the storage driver and the filesystem driver, and we are done. However, modern systems are very complex and it is unlikely to stop here. I will give you one example.
-
-  - Linux allows you to encrypt the storage device. It allows you to gate it behind a passphrase.
-  - Do you think the storage and fs drivers will be enough? You need the drivers for decryption. You need the drivers to read the keyboard. You need the drivers to display this stuff on the screen.
-
-The more complex the system configuration gets, the more drivers we need. Therefore, it is not just about storage and fs drivers, and that's why it is not realistic to bake everything into the kernel binary.
-
-  - Why a system with limited resources and a simple configuration pay the price of a bloated kernel?
-  - Why a system with enough resources load everything statically and waste its resources?
-
-A custom kernel build is definitely the answer. But it doesn't apply everywhere. People who are just switching to Linux, who are neither tech savvy, nor planning to become so, look for a "***set it, forget it***" solution.
-
----
-
-It is clear that a bunch of modules will not solve this issue. The kernel needs a lot of stuff. The only problem that remains is how we are supposed to bring that into RAM.
-
-We can have a compressed archive of all the things that are required, but the problem remains the same. How we are going to bring that into memory from the storage device!
-
-Think about it. What else is a compressed file that is successfully brought into memory from the storage device without any drama? I hope you have thought about `vmlinuz`.
-
-We have never questioned how `vmlinuz` is loaded into memory when it also exists on the same storage device. If `vmlinuz` can be loaded, so as this is compressed archive.
-
-The answer is in the boot process. The motherboard firmware has its own primitives to read a storage device. It reads the bootloader, which reads `vmlinuz` and that compressed archive into memory.
-> *The boot process is an expedition in itself. Therefore, it is in the best of our interest to stop here. Otherwise, one-by-one, we have to peel back the whole kernel. That's too much scouring for such a simple question, and we are already quite deep into it.*
-
----
-
-So, the problem is solved. We have the compressed kernel binary and a compressed archive containing everything that is required to move forward.
-
-Technically, we are ready for the next step. However, I have another question.
-
-The kernel binary and the supporting environment is provided as compressed archives. "***Who will decompress them?***" This is not a userspace environment where we have decompressor utilities.
-
-Earlier we have seen that the compressed `vmlinux` is combined with something to generate `vmlinuz`. That is the decompressor. In other words, `vmlinuz` supplies its own decompressor. It is a self-extracting executable.
-
-But who decompresses the decompressor itself, as it is a part of `vmlinuz`, which is a compressed archive.
-
-I won't get into it, but the short answer is, the decompressor isn't compressed.
-```
-vmlinuz = (normal-decompressor) + (compressed-kernel)
-```
-
-Therefore, the decompressor runs normally and consumes the compressed kernel as its payload, decompresses it and loads it into the memory. Once done, it jumps on the kernel's entry point.
-> *I have skipped the details because they aren't relevant.*
-
----
-
-I am dumb enough to ask "***why do we compress `vmlinux` in the first place?" Why don't we just provide it as it is, without any compression?***
-
-In my case, the size of `vmlinux` was 55 MB and `vmlinuz` was 12 MB. I suppose `vmlinux` is already stripped of things like debug symbols and string tables. Anyways, the difference is significant.
-
-`vmlinux` lives on a storage drive and it has to be read from there. A storage device has some read/write speed.
-  - The higher the size, the more time it will take to read the contents from it.
-  - By reducing the size, we reduce the time it takes to read the contents from it.
-
-Modern CPUs are very fast. They can decompress data at a much faster rate.
-
-It is possible that the maintainers have noticed that reading a compressed binary from a storage device and decompressing it on the fly is faster enough than reading it uncompressed. That's a win-win situation. We have saved storage, and time.
-
----
-
-Let's talk about the "environment" that is loaded alongside `vmlinuz`. And WHY we need to do that!
-
-CONTINUE FROM HERE
-
-
-
-
-The `vmlinuz` binary was found in `/boot/`. If we list this directory, we can find a file named `initrd.img-$(uname -r)`.
-```bash
-$ file /boot/initrd.img-$(uname -r)
-/boot/initrd.img-6.12.57+deb13-amd64: ASCII cpio archive (SVR4 with no CRC)
-```
-
-The `initrd` in `initrd.img-$(uname -r)` stands for initial ram disk. It is an archive containing a temporary, minimal root filesystem with essential drivers and scripts, which is loaded into RAM so the kernel can find and mount the real storage drive (among other things).
-
-`initramfs` is the modern replacement for `initrd`. It is a compressed archive containing a temporary, miniature operating system that the kernel unpacks directly into RAM during boot to load disk drivers and mount the real hard drive.
-
-The kernel provides a utility to read the contents of this file. It is called `lsinitramfs`.
-
-The file named `initrd.img` on modern Linux is not actually an old-style `initrd` disk image; it is an `initramfs` archive, and the tool `lsinitramfs` unpacks and lists modern `initramfs` formats.
-
-Let's use it and read its contents:
-```bash
-$ lsinitramfs /boot/initrd.img-$(uname -r) | grep -E "nvme|ext" | grep -E ".ko"
-
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/common/nvme-auth.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/common/nvme-keyring.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-core.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-fabrics.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-fc.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-rdma.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme-tcp.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/host/nvme.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvme-loop.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvmet-fc.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/drivers/nvme/target/nvmet.ko.xz
-usr/lib/modules/6.12.57+deb13-amd64/kernel/fs/ext4/ext4.ko.xz
-```
-
-We can notice that many nvme drivers are present in the `initrd` file, along with an ext4 driver. But what else does it contain?
-```bash
-$ lsinitramfs /boot/initrd.img-$(uname -r) | wc -l
-1922
-```
-
-That's a lot, isn't it? Let's check if all of it is just modules.
-```bash
-$ lsinitramfs /boot/initrd.img-$(uname -r) | grep -E ".ko" | wc -l
-895
-```
-
-46.5% of this thing is flat kernel modules. What else is there? Let's list them all and put them in a file.
-```bash
-$ lsinitramfs /boot/initrd.img-$(uname -r) > output.txt
-```
-
-Open this file in a text editor and gloss over it. It will take some time, and I recommend you to invest it. You will notice a whole lot of kernel modules, directory entries and some utilities which are largely userspace programs.
-
-Some of the entries that hold relevance to us are:
-```
-usr/lib/modules/6.12.43+deb13-amd64/kernel/arch/x86/kvm/kvm.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/acpi/battery.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/acpi/fan.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/input/keyboard/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/input/mouse/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/ethernet/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/ipvlan/ipvlan.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/thunderbolt/thunderbolt_net.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/net/usb/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/nvme/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/thunderbolt/thunderbolt.ko.xz
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/tty/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/drivers/usb/*
-usr/lib/modules/6.12.43+deb13-amd64/kernel/fs/*
-
-init
-usr/bin/kmod
-usr/bin/udevadm
-usr/sbin/rmmod
-usr/sbin/modinfo
-usr/sbin/lsmod
-usr/sbin/insmod
-usr/sbin/init
-usr/sbin/depmod
-usr/sbin/chroot
-usr/bin/mknod
-
-usr/lib/modules/*
-usr/lib/udev/*
-```
-
-Kernel modules makes sense. The directories they are present in makes sense too. Why userspace utilities?
-> For the time being, we can ignore the userspace tools.
-
-We have started with loading only the "essential modules", but `initrd` seems to be loading basically everything. Why?
-  - The simplest explanation that isn't satisfactory even a bit is that modern systems are complex and this much bootstrapping is probably a necessity, that's the kernel does it.
-  - Another question the is beyond the scope of this pursuit.
-
-This `initrd.img` is generated locally while installing a Linux distribution. There are two modes in which it could be built.
-  1. **Generic mode**, where drivers for hundreds of hardware devices are built.
-  2. **Host-only mode**, where only the drivers required for the current hardware are built.
-
-We can also eliminate it if we can embed everything into the kernel binary itself.
-
-This `initrd.img` can be updated in userspace using specialized tools.
-
----
-
-Just close your eyes and think about it.
-  - The `initrd.img` is not fixed. It can modified in the userspace to our liking.
-  - The OS kernel binary, i.e. `vmlinux`, is not fixed either. We can rebuild the kernel to our liking and just replace the file in the `/boot` directory, along with a few other things that need to be done, and the kernel is updated.
-
-That's the genius of this philosophy.
-
----
-
-So we have the bootstrapping code, i.e. `initrd.img` alongside the kernel binary, i.e. `vmlinux`. The motherboard has some primitives that allows reading `vmlinuz` and `initrd.img` into memory.
-
-The kernel binary is decompressed and starts executing. It starts with some assembly and then moves on to `start_kernel()` which is defined in [*root/init/main.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/init/main.c?h=v7.2.12#n977).
-
-It includes everything that the kernel initializes before creating the first userspace process, i.e. `init`. On line 1180, it calls `rest_init()`. On line 683, we can notice the kernel spawning the first userspace process, i.e. `init`.
-
-`kernel_init()` is define one line 1544. On line 1579, we can notice `ramdisk_execute_command`, which is a character pointer to `/init` defined on line 167.
-
-`run_init_process()` is defined on line 1462. It calls Linux kernel's internal implementation of the `execve` syscall, i.e. `kernel_execve()`, which is defined in [root/fs/exec.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/exec.c?h=v7.2.12#n1902).
-
-`kernel_execve()` prepares the binary parameters (`struct linux_binprm`) for `/init` and calls `bprm_execve()` defined on line 1777 in the same file. It calls `exec_binprm()` which is defined on line 1732 in the same file. It calls `search_binary_handler()`, which is defined on line 1698. It calls `fmt->load_binary(bprm)` on line 1717.
-
-By this time, you should know what this thing is. A thing similar to the `*_operations` structs. The type of `fmt` is `struct linux_binfmt`, which "defines the functions that are used to load the binary formats that linux accepts", in kernel's own words.
-
-The signature of this function pointer is:
-```c
-int (*load_binary)(struct linux_binprm *);
-```
-
-There are `static struct linux_binfmt` instances for different executable formats the kernel supports, including ELF. These instances are registered in the kernel using `register_binfmt()`, which adds them to kernel's global formats linked list. There is one defined for elf as well, on line 96 in [*root/fs/binfmt_elf.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/binfmt_elf.c?h=v7.2.12#n96). It is called `elf_format`.
-
-When `search_binary_handler()` loops over that list, it finds elf_format and calls its load_binary pointer (load_elf_binary).
-
-So, fmt->load_binary(bprm) resolves to `load_elf_binary(bprm)`, which is defined in [root/fs/binfmt_elf.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/binfmt_elf.c?h=v7.2.12#n832).
-
-It is a huge function, most of which is irrelevant for us. Scroll down to line 1379 and you will find `START_THREAD()`. That creates our `/init` process.
-
-`START_THREAD` is an alias to `start_thread`. The alias is defined in [root/include/linux/elf.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/elf.h?h=v7.2.12#n25). `start_thread` is defined in [root/arch/x86/kernel/process_64.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/x86/kernel/process_64.c?h=v7.2.12#n581).
-
-`init` is created.
-
-
-
-
-It mounts the real root filesystem and replaces the temporary RAM filesystem (initramfs) with it.
-
-Now the kernel has all the necessary drivers loaded into RAM.
-
-
-
-
-
 
 - physical
 - silicon
 - virtual
 
----
-
-Let's continue with the device model now.
-
-## The Linux Device Model
-
-The central pieces are "***devices***" and their "***drivers***".
-
-
-
-
-
-
-In modern Linux, a device file exists on a pseudo filesystem in RAM called, `devtmpfs`.
-
-A pseudo filesystem is a filesystem that lives entirely in RAM, backed by kernel memory. When the system powers off, it vanishes completely. When it powers on, it constructs it dynamically.
-
-`devtmpfs` is an in-memory filesystem mounted at `/dev`. Whenever a driver registers a device with the kernel (e.g. KVM registers /dev/kvm, or you plug in a USB drive), the kernel itself automatically creates a device node in `devtmpfs`.
-
-The `i_mode` has the `S_IFCHR` bit set if the inode is for a device file and the `*i_cdev` field in the last union points to the character device it is associated with.
-
----
-
-Think of an IP address and a Port number:
-  - An IP address identifies the computer on a network.
-  - A Port number identifies which specific program on that computer gets the packet.
-
-## A Character Device
-
-**Note: No member omitted. The structure can be verified at [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12#n14).**
-
-```c
-struct cdev {
-  struct kobject kobj;
-  struct module *owner;
-  const struct file_operations *ops;
-  struct list_head list;
-  dev_t dev;
-  unsigned int count;
-};
-```
-
-
-## A Miscellaneous Device
-
-**Note: No member omitted. The structure can be verified at [*root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12#n84).**
-
-```c
-struct miscdevice {
-  int minor;
-  const char *name;
-  const struct file_operations *fops;
-  struct list_head list;
-  struct device *parent;
-  struct device *this_device;
-  const struct attribute_group **groups;
-  const char *nodename;
-  umode_t mode;
-};
-```
-
-
-
-
----
-
-anon_inode, devtmpfs, anonymous fs, char_device_struct {}
+anon_inode, devtmpfs, anonymous fs, char_device_struct {}, pseudo-fs
 
 # Take an example
 
