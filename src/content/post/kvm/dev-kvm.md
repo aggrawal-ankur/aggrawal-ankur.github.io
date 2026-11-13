@@ -1346,21 +1346,118 @@ When a physical device is plugged into the machine, the kernel has to perform tw
   1. Detect the device.
   2. Load the appropriate kernel modules.
 
-Let's see how a device is detected.
+A physical device is inserted into a slot. This slot is connected to the motherboard by some wires which are called ***bus***.
 
+Each bus is different and it is controlled (or managed) by a hardware component. Different bus specification names them differently. We will call them "***bus controller***" here.
 
+When a device is inserted into a slot, a change in voltage is detected by the bus controller. It then raises a hardware interrupt, notifying the CPU about it. 
+> *This change in voltage is automatic. Thanks to physics, we don't have to understand how or why it happens.*
 
+Every bus controller is assigned a unique interrupt vector. When the bus controller raises an interrupt, it specifies the interrupt vector, and the CPU uses it to locate the bus controller's handler in the Interrupt Descriptor Table.
 
+This handler function belongs to the driver that communicates with the bus controller. It then initiates the process of identifying the device.
 
+Some bus specifications require the device to identify themselves, so they carry an identity. Other bus specifications don't require it, so the devices aren't obliged to have it.
+
+For example, devices on the PCIe or USB buses are self identifying. They carry unique identifiers. But devices on simpler and older buses like I2C or SPI often don't.
+
+How the devices that are attached to a non-self-identifying bus are identified? They are identified statically by the motherboard's firmware. The motherboard manufacturer writes a hardcoded blueprint into the laptop's ROM. The kernel reads this blueprint to know which device is available on which bus.
+
+Why some buses are self-identifying and others aren't? It depends on the design goals.
+  - For example, when everything is soldered on the motherboard, the designer knows which device is attached to what bus and where it is. A statically compiled table is enough here.
+  - On the contrary, there is no limit to plug-and-playable hardware. The hardware needs a way to identify the device.
+  - Some devices are small and simple enough that embedding an identity might not be feasible. Complex hardware, on the other hand, might already have space to accommodate the identity.
+  - Some buses are designed for a wide range of devices, while others are designed for a specific type of devices.
 
 ---
 
-- physical
-- silicon
-- virtual
+For a self-identifying bus, the bus driver queries the device to identify itself. As per the bus spec, the device can have multiple identification fields, but for now, the three that concern us are: vendor ID, device ID, and class ID.
 
-anon_inode, devtmpfs, anonymous fs, char_device_struct {}, pseudo-fs
+There are standard bodies (consortium of companies) for each bus. They assign the device manufacturer a Vendor ID. The vendor assigns the device a device (or product) ID. Each unit of that device has a serial number or something, that identifies the unit, but that detail doesn't concern us.
 
-# Take an example
+There is a third kind of identity, called the Class ID. The Standards Body defines the official list of Class IDs for the bus specification. The vendor selects the appropriate class ID for their device.
 
-# Conclusion
+A Class ID identifies the type of a device. An M.2 SSD from Samsung has a different Vendor and Device ID than the one from WD. But both of them are M.2 SSDs, so they have the same Class ID.
+
+Let's take an example to understand their importance.
+  - There are so many keyboard-mouse vendors, but does every vendor write a driver for their products?
+  - It's unlikely, and it is not required in the first place as they are all USB keyboard and mouse, so they speak the same language.
+  - They all have the same Class ID, which identifies the driver for them.
+  - However, some vendors have customizable keyboards. For example, RGB lights, programmable keys, etc.
+  - To access those features, we need the vendor specific driver, for which, we need the Vendor and Device ID.
+  - Obviously if there is an open specification for these features and the vendor follows it, there is no need for vendor-specific driver.
+
+Therefore, Class ID helps to identify the generic driver, while Vendor ID and Device ID are used to identify the vendor-specific driver.
+
+---
+
+Each driver declares a compile-time list of IDs it supports. For example, the generic nvme driver declares `nvme_id_table[]` in [/root/drivers/nvme/host/pci.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/nvme/host/pci.c?h=v7.2.12#n4100) to announce all the devices it supports.
+
+On line 4293, there is `PCI_CLASS_STORAGE_EXPRESS`, which refers to the PCI Class Code for storage controllers. It is defined as `0x010802` in [root/include/linux/pci_ids.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/pci_ids.h?h=v7.2.12#n27).
+
+Any device on the PCIe bus that has this class code will be picked up by the nvme driver.
+
+If we check the class code of the SSD on my system, we will get `0x010802`, the generic PCI class code for storage controllers.
+```bash
+$ cat /sys/bus/pci/devices/0000:02:00.0/class
+0x010802
+```
+
+But the table also has entries for specific Vendor and Device IDs. Those entries are for devices that have a known issue that needs to be managed in a specific way.
+
+These are the IDs associated with my SSD.
+```bash
+$ lspci -nn | grep -i nvme
+02:00.0 Non-Volatile memory controller [0108]: 
+Silicon Motion, Inc. 
+SM2263EN/SM2263XT (DRAM-less) NVMe SSD Controllers 
+[126f:2263] (rev 03)
+```
+  - Vendor ID: `126f`
+  - Device ID: `2263`
+  - Class ID (first two bits): `0108`
+
+This corresponds to an entry on line 4134 for "Silicon Motion Unidentified". So my SSD also has a known issue for which the kernel needs to do some extra work to get it working.
+
+---
+
+When we install the kernel, a userspace program called `depmod` scans all the compressed kernel module binaries and compiles a flat text file: `/lib/modules/$(uname -r)/modules.alias`. The kernel supports different compression algorithms, so the suffix depends on which compression algorithm was chosen. For example, Debian 13 uses `xz`, so the modules are suffixed `.ko.xz`.
+
+If a new module is added to the system later, `depmod` is executed to update this list.
+
+For silicon capabilities like VMX, there are no bus or device Id. They are identified using the CPU assembly instruction `CPUID`.
+
+For pseudo devices, there is no such drama. We will explore them later.
+
+---
+
+So the physical device is inserted into a slot. The bus controller has detected that and raised a hardware interrupt. The CPU jumps to the interrupt handler for the bus. The handler queries the device for its identity. The bus driver has the identity of the device now.
+
+The bus driver creates an in-memory representation of the device.
+
+A device has some state and a set of operations (just like a file or inode). Therefore, there is a standard layout for a device, called `struct device`. But a device doesn't exist in isolation. The existence of a device is closely associated with a bus. Therefore, some bus-specific state is required as well.
+
+Therefore, the generic `struct device` template is embedded in the bus-specific device struct. For example, a PCIe bus has `struct pci_dev`, which has `struct device` in it.
+
+---
+
+After the in-memory representation is created, the matching device driver is needed to be located and attached to the device.
+
+The bus subsystem provides the code for this matchmaking and every bus simply inherits it.
+
+CONTINUE
+
+
+----
+
+So the bus driver, I guess, enumerated the new device and fetched its identity. The physical device is detected and identified successfully. Now an in-memory representation is required. So, a `struct device` or something will be created for this device. It should contain information about the device, but what exactly, that I don't know yet. It may include vendor ID, product ID, class ID, and other IDs. An operations struct that lead the way to the functions in the driver, etc. I simply don't know the details, so I am not sure about the answer.
+
+The driver then registers itself with the kernel.
+
+Every bus maintains a simple linked list: its list of registered drivers. During bus initialization (done by the core kernel), each driver adds itself to the list.
+
+When an interrupt arrives, the kernel walks the list, calling a driver-supplied function for each driver. The driver inspects the hardware to determine whether it is the correct driver for the interrupting device. If so, it claims the device and performs any necessary initialization. If not, it tells the kernel to move on to the next driver.
+
+What if the bus reaches the end of the list and no driver matched? The driver doesn't exist in RAM.
+
+The kernel creates a userspace event which is picked up by a userspace daemon, which locates the driver and loads it into memory.
