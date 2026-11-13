@@ -1443,9 +1443,17 @@ Therefore, the generic `struct device` template is embedded in the bus-specific 
 
 After the in-memory representation is created, the matching device driver is needed to be located and attached to the device.
 
-The bus subsystem provides the code for this matchmaking and every bus simply inherits it.
 
-CONTINUE
+There are some structures relevant to the bus subsystem.
+
+  1. `struct bus_type` represents a type of bus. There is one for each bus type. It is defined in [root/include/linux/device/bus.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device/bus.h?h=v7.2.12#n24).
+  2. `struct pci_bus` represents a single instance of a PCIe bus. It is defined in [root/include/linux/pci.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/pci.h?h=v7.2.12#n706).
+  3. `struct pci_dev` represents a device on the PCIe bus. It is defined in [root/include/linux/pci.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/pci.h?h=v7.2.12#n343).
+  4. `struct bus_driver` represents a driver for a type of bus. Like, `struct pci_driver` for a PCIe bus. It is defined in [root/include/linux/pci.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/pci.h?h=v7.2.12#n970).
+  5. `struct device_driver` represents a driver for a type of device. Like, `struct pci_driver` for a PCIe device.
+
+
+
 
 
 ----
