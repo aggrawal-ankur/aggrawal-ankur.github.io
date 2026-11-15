@@ -297,8 +297,6 @@ The following structures are relevant to this exploration.
 | `inode` and `inode_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
 | `file` and `file_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
 | `dentry` | [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
-| `cdev` | [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12) |
-| `miscdevice` | [*root/include/linux/miscdevice.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/miscdevice.h?h=v7.2.12) |
 | `fdtable` and `files_struct` | [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
 
 We will explore them one-by-one.
@@ -1144,8 +1142,63 @@ I understand devices as an in-memory representation of a ***resource***. The res
 
 ---
 
-I have started from physical devices, in hope that I will steadily build a rough understanding of the entire device model, which is enough for me to write about it. However, I was wrong.
+I have started from physical devices in hope that I will steadily build a rough understanding of the entire device model, enough for me to understand `/dev/kvm`. However, I was wrong.
 
-Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model. Obviously, this is my experience, yours could be different.
+Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model. This is my experience, yours could be different.
 
-The management layer for a silicon capability device and a pseudo device is far more manageable. Since this is what that concerns us, we will explore these only.
+The management layer for a silicon capability device and a pseudo device is far more manageable. This is what that concerns us, and will be explored here.
+
+## The in-memory representation of a device
+
+The core of a device is represented by `struct device`. It is defined in [*root/include/linux/device.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device.h?h=v7.2.12#n702).
+
+Note: Only 9/46 members are relevant here.
+
+```c
+struct device {
+  struct device *parent;
+
+  const struct device_type *type;
+  const struct bus_type	*bus;
+
+	struct device_driver *driver;
+  void *driver_data;
+
+  dev_t	 devt;
+  u32    id;
+
+  const struct class *class;
+
+  void (*release)(struct device *dev);
+};
+```
+
+Below is a description of these fields.
+
+| Field | Description |
+| ----- | ----------- |
+| `parent` | The parent device of this device in the device hierarchy. |
+| `type`   | Sub-categorization for devices on the same bus (distinguishes special attributes/operations). |
+| `bus`    | The bus the device lives on (e.g. `pci_bus_type`). |
+| `driver` | Pointer to the driver bound to this device; `NULL` if unattached. |
+| `driver_data` | Pointer to the private scratchpad for the driver bounded to this device. |
+| `devt`  | The Major and Minor numbers. |
+| `id`    | Instance number used for naming when multiple identical devices exist (e.g. `loop0`, `loop1`). |
+| `class` | High-level role/subsystem of the device (e.g. `misc_class`), grouping it in `/sys/class/`. |
+| `(*release)` | Destructor callback executed when the device's reference count drops to zero to free memory. |
+
+As said, `struct device` is the core of a device, stuff that basically every device uses. But, a device has specifics as well, stuff that is meaningful to that particular kind of device only.
+
+Therefore, `struct device` is rarely used in isolation. Instead, it is composited into a structure that provide additional fields for that particular kind of device. Here are some examples.
+
+  1. Devices attached to the PCIe bus are represented by `struct pci_dev`.
+  2. Devices attached to the USB bus are represented by `struct usb_device`.
+  3. For miscellaneous devices, there is `struct miscdevice`.
+
+All of them have one thing in common. They embed a `struct device` in them.
+
+---
+
+A device is paired with an inode so that it can be accessed as a file by the userspace. This answers why there are "block device file", or "character device file". Those devices are paired with the VFS so that they can be seamlessly accessed in the userspace.
+
+The question that remains is why devices can't be accessed directly! The answer is simple, and we have already explored it.
