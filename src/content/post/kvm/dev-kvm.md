@@ -39,15 +39,7 @@ I prefer long writings, instead of a series of short articles. This is a signifi
 
 8. This is purely an investigative work. I have used the source code to build this understanding and it is possible that my interpretation of certain details is not how the kernel authors/maintainers perceive them. If my interpretation feels incorrect, I welcome your perspective and corrections.
 
-9. I have asked a total of XXXX questions here, and YYYY questions are something I have completely left because they are beyond the scope of this exploration.
-
-10. It is recommended to guard the scope of your exploration. Otherwise, you will never stop spiraling. This heavily applies to shiny objects. However, what about inward expansion of the scope?
-    - In my understanding, the advice works great to protect from outward expanding scope. But when the scope increases in terms of depth, it is harder to control it.
-    - So far, the only way I know to deal with it is by embracing it. Whatever comes, I explore, capture it and churn it. If it survives, great. If it doesn't, great.
-
-    For this reason, a lot of things are just declarative here. While I myself have dug into them to be sure about what I am writing, I have consciously chosen to conceal those details. They become noise.
-
-11. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
+9. While I name this an *exploration (or expedition)*, it is important to understand that it doesn't mirror how I understood it. I have gone astray multiple times. If I mentioned everything in its raw form, it's meaning and worth will be questionable to you. Therefore, it has the exploratory nature but it is still guided by a version of me who has already achieved the objective. Also, it has gone through editorial work which, by design, removes some of the rawness.
 
 ---
 
