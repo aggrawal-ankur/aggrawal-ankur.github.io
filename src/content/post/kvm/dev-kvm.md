@@ -304,6 +304,8 @@ We will explore them one-by-one.
 
 Inodes are local to a filesystem. Therefore, the same inode number can exist in multiple filesystems. That means, an inode number is not enough to identify an inode. We need to know the filesystem it belongs to as well. However, that detail is not required here so we will skip it.
 
+For storage filesystems, there are on-disk inodes, which are separate from the VFS inode structure. Every storage fs has its own format for on-disk inodes. They are compact and only contain passive persistent state. They are read and VFS inodes are created from them on-demand.
+
 Note: Only 16/56 members are relevant here. The complete struct can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
 
 ```c
@@ -1120,15 +1122,15 @@ We have understood the VFS as a contract, and if a thing could be modeled into t
 
 Can a device be exposed as a file? Well, who is stopping us from doing that, if we wish to do it? The question is, "***why do we need to do so?***" We already know the answer. Let's take an NVMe SSD, for example.
 
-  - We have a slot for it on the motherboard.
+  - We have a PCIe slot for it on the motherboard.
   - The SSD has to be discovered, first of all, so some software is required for that.
   - There will be some state associated with it, so an in-memory (software) representation of the SSD device is necessary.
   - Then we have to locate the software that knows how to communicate with an NVMe SSD.
-  - After the software is found, we have to link it with the in-memory representation of the device so that the functions could be accessed.
+  - After the software is found, we have to link it with the in-memory representation of the device so that the functions could be accessed properly.
 
 We need software to discover devices. Different devices are attached differently on the motherboard, so different software is required to discover, identify and manage them.
 
-Some devices are customizable. For example, we have simple keyboards and customizable ones, where you can change the lighting, assign macros to keys, change the key press latency, etc. The general protocol might not cover these details, so specialized software written by the manufacturer is required to use those features.
+Some devices are customizable. For example, we have keyboards with customizable features, where you can change the lighting, assign macros to keys, change the key press latency, etc. The general protocol might not cover these details, so specialized software written by the manufacturer is required to use those features.
 
 A device like an SSD could be accessed by multiple entities simultaneously, and without coordination, they would corrupt each other's data.
 
@@ -1136,38 +1138,53 @@ These are some of the things that need to be done, but they are already a lot of
 
 This is all critical work, so it is the kernel that does it. Therefore, the software that touches these devices is in the kernel space. However, it is the userspace that uses these devices to do something. So how is the userspace supposed to access these features?
 
-A layer that exposes these critical kernel functionalities (managing a device) to the userspace in a controlled manner is required. And what is that layer? ***The VFS***. All we have to do is to create an inode for the device in the relevant filesystem, link the two, and open an instance of the inode. We get immediate access to the device in the userspace.
+A layer that exposes these critical kernel functionalities (managing a device) to the userspace in a controlled manner is required. And what is that layer? ***The VFS***.
+  - All we have to do is to create an inode for the device in the relevant filesystem, link the two, and open an instance of the inode.
+  - We get immediate access to the device in userspace.
 
 This answers why there are "block device file", or "character device file". These are devices that are exposed as files in the userspace.
 
 ---
 
-Moving on, it is noticeable that managing a device is a complicated process. Therefore, the kernel has a dedicated subsystem for it, called "***The Device Model***".
+It is noticeable that managing a device is a complicated process. Therefore, the kernel has a dedicated subsystem for it, called "***The Device Model***".
 
-It is obvious to think that we have to explore the "device model" to understand "devices". It is right, but there is a catch. Let's see what it is.
-
----
+It is obvious to think that we have to explore this "device model" to understand "devices". While it is right, there is a catch.
 
 Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader, just like files are more than bytes on a disk.
 
 I understand devices as an in-memory representation of a ***resource***. The resource could be '***physical***', '***silicon***', or '***virtual***'.
 
-  1. There are devices which are backed by a real physical hardware, plugged externally into a slot, or soldered directly on the motherboard. For example, an NVMe SSD, or a keyboard-mouse pair.
+  1. There are devices which are backed by a piece of hardware, plugged externally into a slot, or soldered directly on the motherboard. For example, an NVMe SSD, or a keyboard-mouse pair.
 
   2. There are devices which are backed by a CPU silicon capability (hardware circuits and microcode built directly into the CPU processor die). For example, the virtualization capability in x86 processors.
 
-  3. There are devices which are backed by a software construct implemented by the kernel. There is no hardware in any form backing them. For example, `/dev/null`, or `/dev/zero`.
+  3. There are devices which are backed by a software construct implemented by the kernel. There is no hardware backing them in any form. For example, `/dev/null`, or `/dev/zero`.
 
 
-I have started from physical devices in hope that I will steadily build a rough understanding of the entire device model, enough for me to understand `/dev/kvm`. However, I was wrong.
+I have started exploring the device model from physical devices, in hope that I will steadily build a rough understanding of the entire device model, enough for me to understand `/dev/kvm`. However, I was wrong.
 
-Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model. This is my experience, yours could be different.
+Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model.
+> *This is my experience, yours could be different.*
 
 The management layer for a silicon capability device and a pseudo device is far more manageable, and this is what concerns us. Therefore, we will explore only this part of the device model.
 
-## The in-memory representation of a device
+---
 
-The core of a device is represented by `struct device`. It is defined in [*root/include/linux/device.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device.h?h=v7.2.12#n702).
+The software representation of a device is divided into three primary structures, each with a specific purpose.
+
+There are certain characteristics which are common to majority of the devices, regardless of their type specification. These characteristics are represented by `struct device`.
+
+There are features which are specific to a particular device. These features are represented by another structure and `struct device` is composited into it. For example, `struct miscdevice` is the structure that represents the miscellaneous devices. The VMX capabilities in the memory are also represented by a `miscdevice` instance.
+
+There are a wide variety of devices, and not all of them are required to be exposed to the userspace. When a device is to be exposed to the userspace, it needs another structure that helps in associating the VFS infrastructure with the device's functionalities. In short, there are two structures for this third purpose, and we will explore them in detail soon.
+
+We will start our journey with the core device structure.
+
+# The in-memory representation of a device
+
+## The core features
+
+The core characteristics of a device is represented by `struct device`. It is defined in [*root/include/linux/device.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device.h?h=v7.2.12#n702).
 
 Note: Only 9/46 members are relevant here.
 
@@ -1204,25 +1221,77 @@ Below is a description of these fields.
 | `class` | High-level role/subsystem of the device (e.g. `misc_class`), grouping it in `/sys/class/`. |
 | `(*release)` | Destructor callback executed when the device's reference count drops to zero to free memory. |
 
-As said, `struct device` is the core of a device, stuff that basically every device uses. But, a device has specifics as well, stuff that is meaningful to that particular kind of device only.
+## The Specifics
 
-Therefore, `struct device` is rarely used in isolation. Instead, it is composited into a structure that provide additional fields for that particular kind of device. Here are some examples.
+As mentioned earlier, `struct device` is rarely used in isolation because there are features (or characteristics) that are specific to a particular kind of device.
 
+A device specific structure, one that covers features specific to it, is created and `struct device` is composited into it to provide the common features.
+
+For example:
   1. Devices attached to the PCIe bus are represented by `struct pci_dev`.
   2. Devices attached to the USB bus are represented by `struct usb_device`.
-  3. For miscellaneous devices, there is `struct miscdevice`.
 
-All of them have one thing in common. They embed a `struct device` in them.
+There is one thing that I want to point out here. This composition can be simple, or multi-layered. It depends on the device.
 
----
+For example, an NVMe SSD is represented by a `pci_dev` struct as it is connected on a PCIe bus, but it also has a representation using `struct nvme_dev` for NVMe specific features.
+  - The `nvme_dev` struct has a `struct device*` pointer which points to the `struct device` instance in `pci_dev`.
+  - It uses `to_pci_dev()` to convert the `struct device*` pointer to `struct pci_dev*`.
 
-We have explored that devices are exposed to the userspace as files. But what do we need to do to expose a device as a file? We have to create an inode for the device. But inodes are filesystem specific, does that mean we need a filesystem for devices? Yes. It is called `devtmpfs`.
+The VMX capabilities, on the other hand, are represented by a simple composition, where a `struct device` is composited into a `struct miscdevice`.
 
-`devtmpfs` is a pseudo (RAM-only) filesystem that is designed to create and manage device files in the userspace. It is mounted at `/dev`.
+I have mentioned this so that if someone dives more into it, they get fewer surprises. This detail is not necessary to us. Don't stress about it.
+
+## Exporting a device to userspace
+
+So we have an in-memory representation of a device and we want to export it to the userspace as a file.
+
+What is required to export a device to the userspace as a file? We need to mold it into the VFS contract. What does that imply?
+  - We need an inode to represent the device in the VFS.
+  - Since inodes are specific to a filesystem, we need a filesystem to create and manage these inodes.
+
+`devtmpfs` is a pseudo (RAM-only) filesystem that is designed to create and manage the VFS specific state for a device. It is mounted at the `/dev` directory.
 > *We do not need to understand what mounting a fs means. Just remember that the dentries and inodes associated with all the devices currently in the system are present in the `/dev` directory file.*
 
-When a new device is created, the kernel creates an inode and a dentry for it. When the device is removed, the kernel destroys them.
+The inode for a device can be created in two ways.
+  1. When a physical device is detected and the in-memory representation of the device is created, inode creation is triggered. `devtmpfs` creates an inode and an in-memory dentry in `/dev`.
+  2. For silicon capability devices and pseudo devices, the associated driver code may or may not be loaded in memory already. During boot, the system pre-creates inodes and dentries for these devices in `/dev`. When a program opens these files, the kernel loads the associated driver code into memory, if not already loaded.
+
+When a physical device is removed from the system, the in-memory representation of the device is also removed. This triggers the removal of the inode and dentry from `/dev`.
+  - If a process currently has the file open, the entry is unlinked from `/dev`, but the in-memory inode remains in RAM until `close(fd)` is called.
+  - The driver is marked detached, and any future operation on the open descriptor will fail with `-ENODEV`.
 
 ---
 
-Now we have an inode for the device, but what connects the two? We need a pointer to the device. For example, `i_cdev` is for character devices, 
+Now we have the inode for a device. How this inode is connected with the actual device? "***How it should be connected to the device?***"
+
+The answer is simple. We need a pointer to the device. But which device? The core device structure or a composite device structure? Obviously the composite device structure.
+
+But there are so many composite devices, which one to point to exactly? That's a problem....., which we can solve using a union. Just make a list of composite device pointers and put it inside a union. Simple.
+
+What happens when a new composite device is introduced? The inode's layout will change. But it is not a big deal, as VFS inodes are created fresh on boot. But when we look at it from the perspective of "***separation of concerns***", it is problematic for a reason. The VFS inode layout is being influenced by another subsystem. It was about modeling the problem into the contract, not the other way around. Why the layout of a VFS inode be dependent on the device subsystem?
+
+OK. Not a union, fine. What about a `void*` pointer? This seems to work, but it has a problem. How we are supposed to know which composite device to typecast this pointer to? We have to save the type information in the inode. This problem is applicable to the union idea as well. While a union provides type information, so the compiler doesn't lose compile-time safety, we still need to store the device type in the inode, which again, is a bad design. Remember that VFS is a contract that is supposed to be general. It should not care about the specifics of a device.
+
+> What compile-time safety, by the way?
+> Answer later.
+
+How about pointing to the core device struct instead? We need only one pointer, and its type-information is known at compile-time, so no extra variable for device type information. But how we are supposed to identify which device this device struct is for? How we are supposed to convert this pointer to the composite struct to access the device-specific fields? Remember, no field in the `struct device` points to its composite device. The core structure is completely unaware of it and has no means to access the struct that composites it.
+
+Fine. Then we have to store the device type information, which again compromises the design.
+
+What else is remaining then!
+
+---
+
+So far, we have tried
+  1. a union of the exact composite device pointers,
+  2. a `void*` pointer, and
+  3. a pointer to the core device struct.
+
+....and none of them have been satisfactory.
+
+All of these methods try to point to the device directly. Maybe this is what causing all the problems. How about removing the device pointer completely from the picture? But how does that solve the problem? That is still required to be figure out.
+
+A process can open multiple files and the kernel simply returns a file descriptor to it. Does that fd reveal anything about the kernel state? No. It's a completely useless thing for the userspace process. Only the kernel knows what to do with it.
+
+How about implementing something similar here? The VFS inode should be given an opaque key that only a specific component of the kernel knows how to use to find the appropriate device representation corresponding to it in the memory. That should solve all the problems, unless we find some while implementing it. For example, there is still one problem, which doesn't require us to implement it to be able to think about it. The device will be found, but where we will store it? If it could be stored in the VFS inode, we won't be discussing this in the first place. That means we have to discover the device every time we have to perform an operation on it? That will be a major problem. But first of all, we need to figure out how we are supposed to discover these devices.
