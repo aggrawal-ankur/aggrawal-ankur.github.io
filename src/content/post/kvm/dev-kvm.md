@@ -139,7 +139,7 @@ Let's understand the virtual file system.
 
 The kernel defines a general filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
 
-This abstraction is like a "***contract***". If a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
+I understand this abstraction as a "***contract***". If a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
 
 The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled into the contract. For example, take `read()`. This abstraction is designed to "***read a file***".
   - Different storage hardware "read" data differently.
@@ -206,7 +206,7 @@ So, what next? It's time to define files.
 
 A contract template by itself is just a set of rules. It only comes into reality when an agreement is made, right?
 
-"***If the virtual file system is the contract, then a file is an active instance of that contract.***"
+"***If the virtual file system is the contract, a file is an active instance of that contract.***"
 
 As I have mentioned this already, a file to me was "text" or "binary". But from the perspective of the Linux kernel, it is more than that, and it is so for valid reasons.
 
@@ -1112,13 +1112,39 @@ Because we have built our foundation from scratch, with questions that appear tr
 It's time to explore devices. Yeah, it's been a long time, but I can't help. I am exhausted, but I have not lost the will to continue; I hope you haven't either.
 
 
-# What is a device?
+# Premise for Devices
 
 If you remember the types of files, some of them have the term "device" in them, like "a block device file". This is confusing to me. Is it a "device", a "file", or both, or something else entirely?
 
-Because we have already explored this lore, I will cut directly to the point. Just like there is VFS, there is an abstraction for devices as well. It is called "***The Device Model***".
+We have understood the VFS as a contract, and if a thing could be modeled into that contract, it could be exposed as a file in the userspace.
 
-As you might have guessed it already, we have to explore this "device model" thing to understand devices. That is, kind of depressing, given how exhausted we are already. However, there is no other choice.
+Can a device be exposed as a file? Well, who is stopping us from doing that, if we wish to do it? The question is, "***why do we need to do so?***" We already know the answer. Let's take an NVMe SSD, for example.
+
+  - We have a slot for it on the motherboard.
+  - The SSD has to be discovered, first of all, so some software is required for that.
+  - There will be some state associated with it, so an in-memory (software) representation of the SSD device is necessary.
+  - Then we have to locate the software that knows how to communicate with an NVMe SSD.
+  - After the software is found, we have to link it with the in-memory representation of the device so that the functions could be accessed.
+
+We need software to discover devices. Different devices are attached differently on the motherboard, so different software is required to discover, identify and manage them.
+
+Some devices are customizable. For example, we have simple keyboards and customizable ones, where you can change the lighting, assign macros to keys, change the key press latency, etc. The general protocol might not cover these details, so specialized software written by the manufacturer is required to use those features.
+
+A device like an SSD could be accessed by multiple entities simultaneously, and without coordination, they would corrupt each other's data.
+
+These are some of the things that need to be done, but they are already a lot of things to do. Plus, they are all high-level words, so we don't know what it takes to implement them.
+
+This is all critical work, so it is the kernel that does it. Therefore, the software that touches these devices is in the kernel space. However, it is the userspace that uses these devices to do something. So how is the userspace supposed to access these features?
+
+A layer that exposes these critical kernel functionalities (managing a device) to the userspace in a controlled manner is required. And what is that layer? ***The VFS***. All we have to do is to create an inode for the device in the relevant filesystem, link the two, and open an instance of the inode. We get immediate access to the device in the userspace.
+
+This answers why there are "block device file", or "character device file". These are devices that are exposed as files in the userspace.
+
+---
+
+Moving on, it is noticeable that managing a device is a complicated process. Therefore, the kernel has a dedicated subsystem for it, called "***The Device Model***".
+
+It is obvious to think that we have to explore the "device model" to understand "devices". It is right, but there is a catch. Let's see what it is.
 
 ---
 
@@ -1132,13 +1158,12 @@ I understand devices as an in-memory representation of a ***resource***. The res
 
   3. There are devices which are backed by a software construct implemented by the kernel. There is no hardware in any form backing them. For example, `/dev/null`, or `/dev/zero`.
 
----
 
 I have started from physical devices in hope that I will steadily build a rough understanding of the entire device model, enough for me to understand `/dev/kvm`. However, I was wrong.
 
 Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model. This is my experience, yours could be different.
 
-The management layer for a silicon capability device and a pseudo device is far more manageable. This is what that concerns us, and will be explored here.
+The management layer for a silicon capability device and a pseudo device is far more manageable, and this is what concerns us. Therefore, we will explore only this part of the device model.
 
 ## The in-memory representation of a device
 
@@ -1191,6 +1216,13 @@ All of them have one thing in common. They embed a `struct device` in them.
 
 ---
 
-A device is paired with an inode so that it can be accessed as a file by the userspace. This answers why there are "block device file", or "character device file". Those devices are paired with the VFS so that they can be seamlessly accessed in the userspace.
+We have explored that devices are exposed to the userspace as files. But what do we need to do to expose a device as a file? We have to create an inode for the device. But inodes are filesystem specific, does that mean we need a filesystem for devices? Yes. It is called `devtmpfs`.
 
-The question that remains is why devices can't be accessed directly! The answer is simple, and we have already explored it.
+`devtmpfs` is a pseudo (RAM-only) filesystem that is designed to create and manage device files in the userspace. It is mounted at `/dev`.
+> *We do not need to understand what mounting a fs means. Just remember that the dentries and inodes associated with all the devices currently in the system are present in the `/dev` directory file.*
+
+When a new device is created, the kernel creates an inode and a dentry for it. When the device is removed, the kernel destroys them.
+
+---
+
+Now we have an inode for the device, but what connects the two? We need a pointer to the device. For example, `i_cdev` is for character devices, 
