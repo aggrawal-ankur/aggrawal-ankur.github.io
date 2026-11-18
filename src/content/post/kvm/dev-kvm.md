@@ -1172,13 +1172,13 @@ The management layer for a silicon capability device and a pseudo device is far 
 
 The software representation of a device is divided into three primary structures, each with a specific purpose.
 
-There are certain characteristics which are common to majority of the devices, regardless of their type specification. These characteristics are represented by `struct device`.
+There are certain characteristics which are common to majority of the devices, regardless of their type specification. These characteristics are represented using `struct device`.
 
-There are features which are specific to a particular device. These features are represented by another structure and `struct device` is composited into it. For example, `struct miscdevice` is the structure that represents the miscellaneous devices. The VMX capabilities in the memory are also represented by a `miscdevice` instance.
+There are features which are specific to a particular device. These features are represented by another structure and `struct device` is composited into it.
 
-There are a wide variety of devices, and not all of them are required to be exposed to the userspace. When a device is to be exposed to the userspace, it needs another structure that helps in associating the VFS infrastructure with the device's functionalities. In short, there are two structures for this third purpose, and we will explore them in detail soon.
+There are a wide variety of devices, and not all of them are required to be exported to userspace. When a device is to be exported to userspace, it needs another structure that helps in associating the VFS infrastructure with the device's functionalities.
 
-We will start our journey with the core device structure.
+Let's discuss these in enough detail.
 
 # The in-memory representation of a device
 
@@ -1223,34 +1223,49 @@ Below is a description of these fields.
 
 ## The Specifics
 
-As mentioned earlier, `struct device` is rarely used in isolation because there are features (or characteristics) that are specific to a particular kind of device.
-
-A device specific structure, one that covers features specific to it, is created and `struct device` is composited into it to provide the common features.
+The common features of a device are represented by `struct device`. The features that are specific to a particular kind of device are represented by creating a separate struct in which `struct device` is composited to provide the common features.
 
 For example:
   1. Devices attached to the PCIe bus are represented by `struct pci_dev`.
   2. Devices attached to the USB bus are represented by `struct usb_device`.
 
-There is one thing that I want to point out here. This composition can be simple, or multi-layered. It depends on the device.
+A device can have a wide range of features. While it is possible to manage all of them with a single composite device structure, it might not be the best way to do it. It could make management a nightmare.
+  - Moreover, many of these features might not require to be exported to the userspace. For example, a physical device needs power, but does the userspace has anything to do with a device's power management? It is the kernel's job to manage it.
+  - If one mega composite struct represented the entire device, there would be no way to export features selectively.
 
-For example, an NVMe SSD is represented by a `pci_dev` struct as it is connected on a PCIe bus, but it also has a representation using `struct nvme_dev` for NVMe specific features.
+For this reason, the features of a device can be separated across more than one composite structure, where each composite structure is like a limb of the device. All the composite structures together represent the complete device.
+
+For example, an NVMe SSD is represented by a `pci_dev` struct as it is connected on a PCIe bus, but it also has a representation using `struct nvme_dev` for NVMe specific features (and it might not be limited to it).
   - The `nvme_dev` struct has a `struct device*` pointer which points to the `struct device` instance in `pci_dev`.
   - It uses `to_pci_dev()` to convert the `struct device*` pointer to `struct pci_dev*`.
 
-The VMX capabilities, on the other hand, are represented by a simple composition, where a `struct device` is composited into a `struct miscdevice`.
+The VMX capabilities of the processor, on the other hand, are represented by a simple composition, where a `struct device` is composited into a `struct miscdevice`.
 
-I have mentioned this so that if someone dives more into it, they get fewer surprises. This detail is not necessary to us. Don't stress about it.
+---
+
+This sounds complex, and it really is. I won't pretend I understand it myself.
+
+This composition can be really simple, or really complex, understanding which requires diving into the details of the device that concerns us. We will do this for `/dev/kvm`, which is not complicated at all. To see the complicated stuff, we have to explore something else, like an NVMe SSD, which doesn't concern us.
 
 ## Exporting a device to userspace
 
-So we have an in-memory representation of a device and we want to export it to the userspace as a file.
+The core device struct and its composite(s) represent the actual device and its features. Each composite device struct represent a specific facet of the device. We can export these facets as separate devices to the userspace.
 
-What is required to export a device to the userspace as a file? We need to mold it into the VFS contract. What does that imply?
+For example, my system has an NVMe SSD, and these are all the devices corresponding to it that are exported to the userspace. But there are devices (features) which are completely reserved for the kernel.
+```bash
+$ ls -l /dev/nvme*
+crw------- 1 root root 243, 0 Nov 18 17:38 /dev/nvme0
+brw-rw---- 1 root disk 259, 0 Nov 18 16:22 /dev/nvme0n1
+brw-rw---- 1 root disk 259, 1 Nov 18 17:08 /dev/nvme0n1p1
+brw-rw---- 1 root disk 259, 2 Nov 18 17:08 /dev/nvme0n1p2
+brw-rw---- 1 root disk 259, 3 Nov 18 17:08 /dev/nvme0n1p3
+```
+
+So we have an in-memory representation of a device and we want to export it to the userspace as a file. What do we need to do to export this device to the userspace as a file? We need to mold it into the VFS contract. What does that imply?
   - We need an inode to represent the device in the VFS.
-  - Since inodes are specific to a filesystem, we need a filesystem to create and manage these inodes.
-
-`devtmpfs` is a pseudo (RAM-only) filesystem that is designed to create and manage the VFS specific state for a device. It is mounted at the `/dev` directory.
-> *We do not need to understand what mounting a fs means. Just remember that the dentries and inodes associated with all the devices currently in the system are present in the `/dev` directory file.*
+  - Since inodes are specific to a filesystem, we need a filesystem specifically designed for this purpose.
+  - `devtmpfs` is a pseudo (RAM-only) filesystem that is designed to create and manage the VFS specific state for a device. It is mounted at the `/dev` directory.
+  - We do not need to understand what mounting a fs means. Just remember that the dentries and inodes associated with all the devices that are exported to the userspace are present in the `/dev` directory file.
 
 The inode for a device can be created in two ways.
   1. When a physical device is detected and the in-memory representation of the device is created, inode creation is triggered. `devtmpfs` creates an inode and an in-memory dentry in `/dev`.
@@ -1268,72 +1283,77 @@ Now we have the VFS inode for a device. How is this inode connected with the act
   - But which device? The core device structure or a composite device structure?
   - Obviously the composite device structure, as that represents the complete device.
 
-There are so many composite device representations, which one to point to exactly?
+There are so many composite device representations. If the inode was supposed to consist pointers to all of them, it would bloat the VFS inode layout and waste a lot of memory. Plus, if a new device is required to be exported, or an existing device needs to be stopped being exported, the VFS inode would have to be modified every single time. The VFS is generic interface, and embedding device specific pointers violates that.
 
-If we keep one pointer for each, it will bloat the VFS inode structure and waste a lot of memory.
+How about a `void*` pointer? Then how are we supposed to typecast it to the intended composite device structure? We have to store the device type information and there will be a massive control flow block performing the typecast based on the device type. Not to mention that VFS is generic, so it is not supposed to handle this drama.
 
-How about a `void*` pointer? Then how are we supposed to typecast it to the intended composite device structure? We have to store the device type information and there will be a massive control flow block performing the typecast based on the device type. That's unnecessary. Why the VFS is supposed to handle this device drama? It is not designed for this.
-
-How about a union of composite device pointers? The list will be long, but only 8 bytes will be consumed, except the space taken by the text for these fields itself. A union provides typed pointers, so we don't lose compile-time safety.
-  - It suffers from the same problem as with a `void*` pointer. How we are supposed to know which field in the union is active?
-  - We need to store device type information and a massive control flow block deciding the pointer to use.
-
-There is another problem with the `void*` and union of pointers approach. If a new composite device definition is created, the VFS inode must be updated. If the kernel no longer supports a device, the pointer for that device must be removed.
-  - VFS is a generic contract, and our solutions are consistently breaking that.
-  - Why must the VFS undergo a change every time a needle is moved in the device subsystem?
+How about a union of composite device pointers? It will only take 8 bytes (on 64-bit systems, obviously). It provides typed pointers (unlike a `void*`), so we don't lose compile-time safety as well.
+  - What about the massive list of pointers inside the union? How we are supposed to know which pointer is valid? We need type information and a massive control-flow block, same as the `void*` approach.
+  - The list of pointers will be HUGE, and will demand modification every time a new composite device is added or an old one is removed.
 
 How about pointing to the core device struct instead? We need only one pointer, and its type-information is known at compile-time, so no extra variable for device type information is required.
   - But how we are supposed to identify which device this device struct is for? How we are supposed to convert this pointer to the composite struct to access the device-specific fields?
-  - Remember, no field in the `struct device` points to its composite device. The core structure is completely unaware of it and has no means to access the struct that composites it.
-  - If you are thinking about `offsetof()`, I want you to remind that it takes two arguments: the parent struct and a field inside it. `struct device` is the member. We don't have the parent struct.
-  - Storing the device type information is not helpful. We would have to bring all the composite struct definitions close to VFS, only then we can use `offsetof` to find the bytes to subtract from a `(char*)(struct device*)` pointer to access the composite device struct.
+  - Remember, no field in the `struct device` points to its composite structure.
+  - If you are thinking about `offsetof()`, I want you to remind that it takes two arguments: the parent struct and a field inside it. We have the field with us, but not the base (parent struct) to calculate the offset from.
+  - Storing the device type information is not helpful. We would have to bring all the composite struct definitions into VFS, only then we can use `offsetof` to find the bytes to subtract from a `(char*)(struct device*)` pointer to access the composite device struct.
 
-How about compositing `struct device` as the first member in the composite device struct? This way, we don't have to use `offsetof()` as the same pointer corresponds to the composite device struct as well. It may work for simple compositions, unless there is something else waiting for us to think about it. However, it fails when the composition is slightly complex. Take this example.
-  - An NVMe SSD attached to the motherboard goes on the PCIe bus, so it has a `struct pci_dev` representing it, which composites `struct device`.
-  - But it also has some storage controller specific state which is represented by `struct nvme_dev`. For some reason that I don't understand, this struct doesn't composite `struct pci_dev`. It is standalone. However, it does composite a `struct device` in it.
-  - There is question. The NVMe SSD has one identity, so who should contain `struct device`? `pci_dev` or `nvme_dev` or both? Since the device is connected on a bus, probably the bus should composite it.
-  - Then what `nvme_dev` should do? It doesn't composite `pci_dev`, it can't composite `struct device` as that duplicates the state and keeping it in sync with the one in `pci_dev` would become a problem of its own.
-  - How about `nvme_dev` pointing to the `struct device` instance in `pci_dev`, instead of storing it? That's composition by reference; what `pci_dev` does is composition by value.
-  - Even if you put `struct device*` as the first member in `nvme_dev`, the semantics will vary. How would you identify whether device is a pointer or a field, before the rest of the drama commences?
+How about compositing `struct device` as the first member in the composite device struct? This way, we don't have to use `offsetof()` as the same pointer corresponds to the composite device struct as well. Well, it works for composition by value, not by reference. Let's see why.
 
-So, what else is remaining then!
+  - Composition by value means the object being composited is embedded inside the composite object.
+  - Composition by reference means the composite object contains a pointer to the object being composited. The object being composited is actually somewhere else in the memory.
+
+  - An NVMe SSD attached to the motherboard goes on the PCIe bus, so it has a `struct pci_dev` representing it, which composites `struct device` by value.
+  - Some other state associated with this SSD is represented by `struct nvme_dev`. It doesn't composite `pci_dev` itself because, otherwise, what would the other compositions refer to when they have to talk to the bus driver!
+  - `nvme_dev` composites `struct device` by reference. It stores a pointer to it, and when it wants to access the PCIe specific fields, it uses `container_of()` to get the pointer to the `struct pci_dev` instance.
+  - Internally, `container_of()` uses `offsetof()`. It is defined in [*root/include/linux/container_of.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/container_of.h?h=v7.2.12).
+  - Why not by value, though? In that case, there will be multiple representations of the core device structure, which might lead to a separate class of problems.
+
+  - Suppose `nvme_dev` is exported to the userspace (it is not, in real life). Its VFS inode will point to `struct device` and we want to access its `nvme_dev` struct.
+    - First of all, how the VFS inode is supposed to know which composite structure to typecast it to? Suppose it somehow knows that and runs `container_of()` on it. What will you pass `container_of()` as the field argument?
+    - Pointer to the `struct device` instance? But that struct physically exist inside `pci_dev`, not `nvme_dev`. It is not going to work.
+    - The address of the pointer variable that stores the pointer to `struct device`? That variable refers to the one inside the VFS inode, not `nvme_dev`. It is not going to work.
+    - We need the `device` pointer variable inside `nvme_dev`, not the one inside the VFS inode, which we don't have.
+
+  By any means, it is not going to work, right?
 
 ---
 
 So far, we have tried
   1. a pointer to the composite device, be it `void*` or a union of typed pointers,
-  2. a pointer to the core device struct, and
-  3. compositing `struct device` as the first field in the composite struct.
+  2. compositing `struct device` as the first field in the composite struct, and
+  3. a pointer to the core device struct.
 
-All of these have some problem or the other.
+... and all of these suffer from more or less the same problems.
 
 Can you notice a similarity in all of these approaches? They are trying to put a pointer to the device representation directly into the VFS inode. Is that the root of all problems?
 
-We have already tried putting a direct pointer to the device into the VFS inode and we have only tasted defeat here. Let's try something else. And what exactly? We'll figure out.
+We have already tried putting a direct pointer to the device into the VFS inode and we have only tasted defeat here. Let's try something else. And what exactly? We'll figure that out.
 
 First of all, what is the problem? "***We have to connect the VFS inode with the device it is for.***" Let's start by finding the requirements that the solution must satisfy.
 
-  1. It should be standalone and decoupled from the VFS.
+  1. It should be standalone and decoupled from the VFS entirely.
   2. The VFS inode should remain generic. It should not have any device specific fields or device type information.
   3. It must be able to accommodate new device types without requiring any modification.
 
 Basically, what we are looking at is a generic way to find the intended in-memory representation for a device. It's like a middleman.
   - If a device wants to be discoverable in userspace, it must register itself with this middleman.
-  - If the VFS inode needs to identify the device it is for, it asks the middleman to identify it.
+  - If the VFS inode needs to identify the device it is for, it asks the middleman.
 
 It is clear that the middleman has to maintain some kind of registry.
-  - When a device registers itself with the middleman, the middleman provides a token of some kind to it. This token uniquely identifies a particular device in the system.
-  - The VFS inode should also have this token. The VFS inode invokes the middleman with this token and the middleman returns a pointer to the intended device representation. For this to work, the VFS must be provided this token somehow.
-  - Also, the token must be opaque to the VFS inode.
+  - When a device registers itself with the middleman, the middleman provides a token of some kind to it. This token uniquely identifies a particular device representation in the system.
+  - The VFS inode should also have this token. The VFS inode invokes the middleman with this token and the middleman returns a pointer to the intended device representation. For this to work, the VFS inode must be provided this token somehow.
+  - Also, the token must be opaque to the VFS inode. A hard requirement. We don't want any device specific drama.
 
-If you think about it closely, you will find that something like this has already been discussed here. A process can open multiple files and the kernel simply returns a file descriptor to it. Does that fd reveal anything about the kernel state? No. It's a completely useless thing for the userspace process. Only the kernel knows what to do with it.
+If you think about it closely, you will find that something like this has already been discussed here.
+  - A process can open multiple files and the kernel simply returns a file descriptor to it.
+  - Does that fd reveal anything about the kernel state? No. It's a completely useless thing for the userspace process. Only the kernel knows what to do with it.
 
 This should theoretically solve the problem. However, we've still got two problems to solve.
   1. How the VFS inode will get this token.
-  2. Using the middleman for every file operation is inefficient.
+  2. Using the middleman for every file operation is sure to affect the performance.
 
 Let's think about them.
 
-We can provide the token at the time of inode creation? Yeah, we have to ensure that the device representation already exist in-memory. Only then the token will exist. We can consider this solved.
+We can provide the token at the time of inode creation? Yeah, we have to ensure that the device representation already exist in-memory. Only then the token will exist in the first place. We can consider this solved.
 
-We can cache the device pointer in the VFS inode? But that suffers from the same problem as before. What we need is a general representation that leads us to the specific device representation.
+We can cache the device pointer in the VFS inode? But that suffers from the same problem as before. What we need is a general device representation that leads us to the specific device representation. It seems like a deadlock to me, but if this idea has merit, we will figure out something.
