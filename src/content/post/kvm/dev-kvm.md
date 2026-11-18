@@ -1262,36 +1262,78 @@ When a physical device is removed from the system, the in-memory representation 
 
 ---
 
-Now we have the inode for a device. How this inode is connected with the actual device? "***How it should be connected to the device?***"
+Now we have the VFS inode for a device. How is this inode connected with the actual device?
 
-The answer is simple. We need a pointer to the device. But which device? The core device structure or a composite device structure? Obviously the composite device structure.
+"***Well, if we were to decide how it should be connected to the device, what would we do?***" The answer is simple. We need a pointer to the device.
+  - But which device? The core device structure or a composite device structure?
+  - Obviously the composite device structure, as that represents the complete device.
 
-But there are so many composite devices, which one to point to exactly? That's a problem....., which we can solve using a union. Just make a list of composite device pointers and put it inside a union. Simple.
+There are so many composite device representations, which one to point to exactly?
 
-What happens when a new composite device is introduced? The inode's layout will change. But it is not a big deal, as VFS inodes are created fresh on boot. But when we look at it from the perspective of "***separation of concerns***", it is problematic for a reason. The VFS inode layout is being influenced by another subsystem. It was about modeling the problem into the contract, not the other way around. Why the layout of a VFS inode be dependent on the device subsystem?
+If we keep one pointer for each, it will bloat the VFS inode structure and waste a lot of memory.
 
-OK. Not a union, fine. What about a `void*` pointer? This seems to work, but it has a problem. How we are supposed to know which composite device to typecast this pointer to? We have to save the type information in the inode. This problem is applicable to the union idea as well. While a union provides type information, so the compiler doesn't lose compile-time safety, we still need to store the device type in the inode, which again, is a bad design. Remember that VFS is a contract that is supposed to be general. It should not care about the specifics of a device.
+How about a `void*` pointer? Then how are we supposed to typecast it to the intended composite device structure? We have to store the device type information and there will be a massive control flow block performing the typecast based on the device type. That's unnecessary. Why the VFS is supposed to handle this device drama? It is not designed for this.
 
-> What compile-time safety, by the way?
-> Answer later.
+How about a union of composite device pointers? The list will be long, but only 8 bytes will be consumed, except the space taken by the text for these fields itself. A union provides typed pointers, so we don't lose compile-time safety.
+  - It suffers from the same problem as with a `void*` pointer. How we are supposed to know which field in the union is active?
+  - We need to store device type information and a massive control flow block deciding the pointer to use.
 
-How about pointing to the core device struct instead? We need only one pointer, and its type-information is known at compile-time, so no extra variable for device type information. But how we are supposed to identify which device this device struct is for? How we are supposed to convert this pointer to the composite struct to access the device-specific fields? Remember, no field in the `struct device` points to its composite device. The core structure is completely unaware of it and has no means to access the struct that composites it.
+There is another problem with the `void*` and union of pointers approach. If a new composite device definition is created, the VFS inode must be updated. If the kernel no longer supports a device, the pointer for that device must be removed.
+  - VFS is a generic contract, and our solutions are consistently breaking that.
+  - Why must the VFS undergo a change every time a needle is moved in the device subsystem?
 
-Fine. Then we have to store the device type information, which again compromises the design.
+How about pointing to the core device struct instead? We need only one pointer, and its type-information is known at compile-time, so no extra variable for device type information is required.
+  - But how we are supposed to identify which device this device struct is for? How we are supposed to convert this pointer to the composite struct to access the device-specific fields?
+  - Remember, no field in the `struct device` points to its composite device. The core structure is completely unaware of it and has no means to access the struct that composites it.
+  - If you are thinking about `offsetof()`, I want you to remind that it takes two arguments: the parent struct and a field inside it. `struct device` is the member. We don't have the parent struct.
+  - Storing the device type information is not helpful. We would have to bring all the composite struct definitions close to VFS, only then we can use `offsetof` to find the bytes to subtract from a `(char*)(struct device*)` pointer to access the composite device struct.
 
-What else is remaining then!
+How about compositing `struct device` as the first member in the composite device struct? This way, we don't have to use `offsetof()` as the same pointer corresponds to the composite device struct as well. It may work for simple compositions, unless there is something else waiting for us to think about it. However, it fails when the composition is slightly complex. Take this example.
+  - An NVMe SSD attached to the motherboard goes on the PCIe bus, so it has a `struct pci_dev` representing it, which composites `struct device`.
+  - But it also has some storage controller specific state which is represented by `struct nvme_dev`. For some reason that I don't understand, this struct doesn't composite `struct pci_dev`. It is standalone. However, it does composite a `struct device` in it.
+  - There is question. The NVMe SSD has one identity, so who should contain `struct device`? `pci_dev` or `nvme_dev` or both? Since the device is connected on a bus, probably the bus should composite it.
+  - Then what `nvme_dev` should do? It doesn't composite `pci_dev`, it can't composite `struct device` as that duplicates the state and keeping it in sync with the one in `pci_dev` would become a problem of its own.
+  - How about `nvme_dev` pointing to the `struct device` instance in `pci_dev`, instead of storing it? That's composition by reference; what `pci_dev` does is composition by value.
+  - Even if you put `struct device*` as the first member in `nvme_dev`, the semantics will vary. How would you identify whether device is a pointer or a field, before the rest of the drama commences?
+
+So, what else is remaining then!
 
 ---
 
 So far, we have tried
-  1. a union of the exact composite device pointers,
-  2. a `void*` pointer, and
-  3. a pointer to the core device struct.
+  1. a pointer to the composite device, be it `void*` or a union of typed pointers,
+  2. a pointer to the core device struct, and
+  3. compositing `struct device` as the first field in the composite struct.
 
-....and none of them have been satisfactory.
+All of these have some problem or the other.
 
-All of these methods try to point to the device directly. Maybe this is what causing all the problems. How about removing the device pointer completely from the picture? But how does that solve the problem? That is still required to be figure out.
+Can you notice a similarity in all of these approaches? They are trying to put a pointer to the device representation directly into the VFS inode. Is that the root of all problems?
 
-A process can open multiple files and the kernel simply returns a file descriptor to it. Does that fd reveal anything about the kernel state? No. It's a completely useless thing for the userspace process. Only the kernel knows what to do with it.
+We have already tried putting a direct pointer to the device into the VFS inode and we have only tasted defeat here. Let's try something else. And what exactly? We'll figure out.
 
-How about implementing something similar here? The VFS inode should be given an opaque key that only a specific component of the kernel knows how to use to find the appropriate device representation corresponding to it in the memory. That should solve all the problems, unless we find some while implementing it. For example, there is still one problem, which doesn't require us to implement it to be able to think about it. The device will be found, but where we will store it? If it could be stored in the VFS inode, we won't be discussing this in the first place. That means we have to discover the device every time we have to perform an operation on it? That will be a major problem. But first of all, we need to figure out how we are supposed to discover these devices.
+First of all, what is the problem? "***We have to connect the VFS inode with the device it is for.***" Let's start by finding the requirements that the solution must satisfy.
+
+  1. It should be standalone and decoupled from the VFS.
+  2. The VFS inode should remain generic. It should not have any device specific fields or device type information.
+  3. It must be able to accommodate new device types without requiring any modification.
+
+Basically, what we are looking at is a generic way to find the intended in-memory representation for a device. It's like a middleman.
+  - If a device wants to be discoverable in userspace, it must register itself with this middleman.
+  - If the VFS inode needs to identify the device it is for, it asks the middleman to identify it.
+
+It is clear that the middleman has to maintain some kind of registry.
+  - When a device registers itself with the middleman, the middleman provides a token of some kind to it. This token uniquely identifies a particular device in the system.
+  - The VFS inode should also have this token. The VFS inode invokes the middleman with this token and the middleman returns a pointer to the intended device representation. For this to work, the VFS must be provided this token somehow.
+  - Also, the token must be opaque to the VFS inode.
+
+If you think about it closely, you will find that something like this has already been discussed here. A process can open multiple files and the kernel simply returns a file descriptor to it. Does that fd reveal anything about the kernel state? No. It's a completely useless thing for the userspace process. Only the kernel knows what to do with it.
+
+This should theoretically solve the problem. However, we've still got two problems to solve.
+  1. How the VFS inode will get this token.
+  2. Using the middleman for every file operation is inefficient.
+
+Let's think about them.
+
+We can provide the token at the time of inode creation? Yeah, we have to ensure that the device representation already exist in-memory. Only then the token will exist. We can consider this solved.
+
+We can cache the device pointer in the VFS inode? But that suffers from the same problem as before. What we need is a general representation that leads us to the specific device representation.
