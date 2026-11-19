@@ -1314,7 +1314,7 @@ How about compositing `struct device` as the first member in the composite devic
     - The address of the pointer variable that stores the pointer to `struct device`? That variable refers to the one inside the VFS inode, not `nvme_dev`. It is not going to work.
     - We need the `device` pointer variable inside `nvme_dev`, not the one inside the VFS inode, which we don't have.
 
-  By any means, it is not going to work, right?
+Sigh!
 
 ---
 
@@ -1356,4 +1356,137 @@ Let's think about them.
 
 We can provide the token at the time of inode creation? Yeah, we have to ensure that the device representation already exist in-memory. Only then the token will exist in the first place. We can consider this solved.
 
-We can cache the device pointer in the VFS inode? But that suffers from the same problem as before. What we need is a general device representation that leads us to the specific device representation. It seems like a deadlock to me, but if this idea has merit, we will figure out something.
+We can cache the device pointer in the VFS inode? But that suffers from the same problem. What we need is a general device representation that leads us to the specific device representation. It seems like a deadlock to me, but if this idea has merit, we will figure out something.
+
+---
+
+The centerpiece of this approach is the token. What does that look like? It could be a simple integer, just like an fd. Every device that registers with the middleman gets one.
+
+The middleman then saves a pointer to the device representation in a data structure indexed by this token, just like an fd. But the problem remains the same. There is no one single composite device representation structure.
+
+How about the middleman defining a generic struct? Every device that registers itself with the middleman gets one. The middleman can maintain an array of these structures. But again, the question remains the same. How it will lead us to the exact device representation?
+
+It is clear that even the middleman generic struct can't hold a device pointer, for very obvious reasons. We have to find something else.
+
+At this point, this device pointer is causing way too much trouble for us, so it is the time to ask the nuclear question. Is the VFS inode, or the generic middleman struct, supposed to hold a pointer to the composite device representation in the first place? At this point, every single idea leads to the same deadlock.
+
+Let's change our perspective once again. What knowledge do we have for now?
+  - We have a core device struct that represents features that are common to all devices.
+  - We have composite device structures that represent an entire device function.
+  - The driver for these composite devices creates and manages them.
+  - There are multiple drivers in the kernel, each managing different device compositions.
+
+When we say that the device will register with the middleman, who will actually initiate this registration? The device itself is just a struct. It isn't code. Only the driver that has created it can do that.
+
+As discussed, a driver can create multiple composite device structures for different features of an actual device. Since the driver has created them, the driver has full knowledge of them: the composite device structures themselves, and all of their instances.
+
+The driver already maintains these lists. Since these lists are per-driver, not a flat list of all the devices in the entire system, that can significantly reduce the lookup cost only if we can design the system such that our device search starts from the driver, not the device. Traversing a mega list of hundreds and thousands of devices v/s traversing a list of few tens of devices definitely makes the difference.
+
+So the driver will assign a number to each device that needs to be exported to the userspace. Even better, the programmer already knows which composite device templates are supposed to be exported to the userspace. How about reserving a field that stores this number? The driver can simply access it directly.
+
+So every device has a number local to its driver. Now the driver has to register these devices with the middleman. Earlier we have decided that the middleman assigns a token to each device. However, since the driver maintains the list of devices now, the driver has already assigned a number to them. So, instead of the devices, it is the driver that the middleman assigns a token to.
+
+The flow would be like this:
+  1. The VFS inode provides a number to the middleman.
+  2. The middleman looks up the driver corresponding to this number.
+  3. Now the driver looks up the exact device in the list. But wait.
+
+But how the driver will know which device to look? The VFS inode has to contain both the driver number and the device number. That is not a problem.
+
+The solution already seems complete, except the middleman struct. Where does that fit? Let's talk about it.
+
+There are two ways to allocate it.
+  1. On heap, through the kernel's memory allocator.
+  2. As a part of the composite device struct.
+
+Both are used in the kernel, depending on the situation.
+
+If you remember, the composite device structure needs to have a field to store its token. This token has nothing to do with the device state. Instead, it is only important for the userspace. What else is required by a composite device that has meaning primarily for the userspace?
+  - Think about it. What does the userspace actually access in a device?
+  - The entrypoints defined to export to the userspace, i.e. the `file_operations` table.
+
+While this table is a part of the composite device struct only, it doesn't represent the device's internal state. It is there for the userspace. So, how about we include this information in the middleman struct? But then the middleman struct becomes a struct that represents the exported state of a device? Exactly. That's what we need. The userspace has no reason to access the internal device state. It only needs the file operations table and a way to identify it. That's what the middleman struct is about. Embedding this struct directly into the composite device struct means no heap allocation and the export representation remains accessible in the composite struct only. Accessing the composite struct is just a `container_of()` operation for the driver. The driver will have no issues identifying the device to operate on. We will talk about this later.
+
+Now let's talk about the VFS inode. It represents an object in the filesystem. In this case, the file is just a representation. But it is still a file. So, the VFS inode will have the `driver_number`, the `device_number`, and the `middleman_struct` pointer. Wait, we haven't decided if it will store this pointer or not. But since we are embedding the middleman struct into the composite struct, we have the middleman struct. We have the driver number. We have the device number. And this `open()` operation will also be invoked with the VFS inode. So, the `open()` operation can easily access the composite struct (through `container_of()`) and get the `file_operations` table. But how will the VFS inode know which driver has created this device? We will need to store the `driver_number` in the VFS inode.
+
+---
+
+If you notice, the middleman struct is nothing but a stable anchor inside the composite device struct, the exact thing we were tirelessly searching but couldn't find.
+> *If you still can not wrap your head around the fact that why `struct device` could be that, I recommend you to hold on to it.*
+
+This is the solution that the Linux kernel actually implements. Let's discuss the details.
+
+# Something!
+
+A composite device structure is classified into one of the two types before exporting it to the userspace.
+  1. Block Device
+  2. Character Device.
+
+The block device classification is used for devices that handle data in terms of blocks.
+  - For example, certain features of storage devices are best classified as block devices as storage devices handle I/O in terms of blocks.
+  - Therefore, block devices have a very strict use case.
+
+Character devices, on the other hand, are best understood as a "***catch-all category***". If a device needs to be exported to the userspace and is not a block storage device, it is simply classified as a character device. The proof is in the `/dev` directory.
+  - Open it in a GUI file manage, click on any file, and focus on the bottom.
+  - There are only four types of files: directories, symlinks, block devices and character devices. Most of the non-directory files are character device files.
+  - `/dev/kvm` is a character device. What characters does it deal with?
+  - `video0` represents a video capture stream. What characters does it deal with?
+
+A character device is simply an interface to export a hardware device, a particular feature of a hardware device, a silicon capability, or a software construct defined in the kernel, to the userspace.
+> *That's why it is a catch-all category.*
+
+Why it is called a character device is something I don't know. But I'd love to know.
+
+----
+
+We have talked about a token. It is divided in two parts.
+  - When a driver registers itself, the number it gets is called a major number. A driver can request multiple major numbers. Why though?
+  - When the driver registers a device to be exported to the userspace, it gives it a minor number.
+
+A Major number takes 12 bits and a Minor number takes 20 bits. Therefore, there are 4096 Major numbers and over a million Minor numbers per major number (1,048,576, to be exact).
+
+---
+
+Who is the middleman? Both the classifications have their own middleman. The middleman for character devices is defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12). Open this file alongside.
+
+`cdev_map` is the pointer to the central data structure that the character device subsystem uses to manage the exported character devices. The actual map is initialized by `chrdev_init()`.
+> *Note that `kobj_map` is implemented as a range map. We need not to know the details.*
+
+---
+
+What is the middleman struct called? For character devices, it is called `struct cdev`. It is defined in [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12).
+
+```c
+struct cdev {
+  struct kobject kobj;
+  struct module *owner;
+
+  const struct file_operations *ops;
+  struct list_head list;
+
+  dev_t dev;
+  unsigned int count;
+} __randomize_layout;
+```
+  - *No member is omitted here.*
+
+Below is a description of the relevant fields.
+
+| Field   | Description |
+| -----   | ----------- |
+| `ops`   | The driver's function pointer table for userspace calls. |
+| `list`  | Linked list tracking all open `inode`s pointing to this device (used to purge them if the device unplugs). |
+| `dev`   | The starting 32-bit device number encoding the Major and starting Minor number. |
+| `count` | The number of consecutive minor numbers this `cdev` instance is responsible for handling. |
+
+
+---
+
+Take the example of `nvme_ctrl`. It is defined in [*root/drivers/nvme/host/nvme.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/nvme/host/nvme.h?h=v7.2.12#n341). It embeds a `struct cdev` instance (line 365).
+
+---
+
+Whenever the driver registers for a major number, the middleman assigns a `struct char_device_struct`.
+
+A driver claims a major number and a minor range. Another driver can claim the same major number but a different minor range.
+
