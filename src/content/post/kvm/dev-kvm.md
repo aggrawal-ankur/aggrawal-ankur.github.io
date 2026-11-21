@@ -1416,15 +1416,41 @@ If you notice, the middleman struct is nothing but a stable anchor inside the co
 
 This is the solution that the Linux kernel actually implements. Let's discuss the details.
 
-# Something!
+# Formalization of the Terminology
 
-A composite device structure is classified into one of the two types before exporting it to the userspace.
-  1. Block Device
-  2. Character Device.
+## Token (Device Number)
+
+We have talked about a token. Formally, it is called a "***device number***", which is represented as a 32-bit unsigned integer (`dev_t`).
+
+It is split into two parts, called "***major***" and "***minor***" numbers.
+  - The lower 20 bits make up the minor number and the upper 12 bits make up the major number.
+  - Therefore, there are 4096 major numbers and over a million minor numbers per major number (1,048,576, to be exact).
+
+Major 0 is unused.
+  - For VFS inodes corresponding to non-device files, `i_rdev` is 0 to indicate that it is not for a device.
+  - Major 0 is used as a way to tell the middleman to find a major number dynamically.
+
+## Middleman
+
+Each composite device structure is classified into one of the following before it is exported to the userspace.
+  1. Block Devices
+  2. Character Devices
+
+So these are two middlemen.
+
+We have talked about a central registry that this middleman would maintain. It is called `kobj_map`. It is defined in [*root/drivers/base/map.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/base/map.c?h=v7.2.12).
+
+Both the classifications have used `kobj_map` as their central registry, but recently, block devices have switched to `xarray` instead.
+  - This is the exact [commit](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e418de3abcda8b102f737919e830024d1455938f).
+  - I am not sure why, and I am not interested to find that out.
+
+---
 
 The block device classification is used for devices that handle data in terms of blocks.
   - For example, certain features of storage devices are best classified as block devices as storage devices handle I/O in terms of blocks.
   - Therefore, block devices have a very strict use case.
+
+Block devices don't concern this exploration, so I have not dove into them.
 
 Character devices, on the other hand, are best understood as a "***catch-all category***". If a device needs to be exported to the userspace and is not a block storage device, it is simply classified as a character device. The proof is in the `/dev` directory.
   - Open it in a GUI file manage, click on any file, and focus on the bottom.
@@ -1437,24 +1463,91 @@ A character device is simply an interface to export a hardware device, a particu
 
 Why it is called a character device is something I don't know. But I'd love to know.
 
-----
+Since character devices is what that concern us, we will talk only about them.
 
-We have talked about a token. It is divided in two parts.
-  - When a driver registers itself, the number it gets is called a major number. A driver can request multiple major numbers. Why though?
-  - When the driver registers a device to be exported to the userspace, it gives it a minor number.
+# Character Devices
 
-A Major number takes 12 bits and a Minor number takes 20 bits. Therefore, there are 4096 Major numbers and over a million Minor numbers per major number (1,048,576, to be exact).
+The middleman for character devices is defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12).
 
----
+There are two ways in which a driver can request a major number.
+  1. Ask for a specific major number and allocation would be denied if it is not available. `register_chrdev_region()` is used for this purpose.
+  2. Just ask for a major number and let the middleman find one dynamically. `alloc_chrdev_region()` is used for this purpose.
 
-Who is the middleman? Both the classifications have their own middleman. The middleman for character devices is defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12). Open this file alongside.
+The middleman compulsorily asks the driver to specify the count of minor numbers it needs corresponding to a major number.
+  - The driver has to specify the lower bound minor number and the count of minor numbers.
+  - Therefore, the final range that the driver reserves is `[baseminor, baseminor + count - 1]` for `major`.
 
-`cdev_map` is the pointer to the central data structure that the character device subsystem uses to manage the exported character devices. The actual map is initialized by `chrdev_init()`.
-> *Note that `kobj_map` is implemented as a range map. We need not to know the details.*
+A driver can claim 
+  1. a set of contiguous minor numbers for a major number.
+  2. multiple sets of contiguous minor numbers for the same major number.
+  3. a set of minor ranges corresponding to different major numbers.
+  4. all the minor numbers corresponding to a major number, effectively claiming the whole major number.
 
----
+But there are some nuances to it, discussing which is out of the scope of this exploration. We don't require them anyways.
 
-What is the middleman struct called? For character devices, it is called `struct cdev`. It is defined in [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12).
+
+## Registry of Range Reservations
+
+Whenever a driver requests a major number, the middleman creates a `char_device_struct` entry for it upon successful allocation. It is defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n32). One field is omitted here.
+
+```c
+#define CHRDEV_MAJOR_HASH_SIZE 255
+
+static struct char_device_struct {
+  struct char_device_struct *next;
+
+  unsigned int major;
+  unsigned int baseminor;
+  int minorct;
+
+  char name[64];
+} *chrdevs[CHRDEV_MAJOR_HASH_SIZE];
+```
+
+We can break it in two parts: the struct declaration, and the array declaration.
+```c
+struct char_device_struct {
+  struct char_device_struct *next;
+
+  unsigned int major;
+  unsigned int baseminor;
+  int minorct;
+
+  char name[64];
+};
+
+static struct 
+char_device_struct *chrdevs[CHRDEV_MAJOR_HASH_SIZE];
+```
+
+A `struct char_device_struct` represents one contiguous range reservation. These structures are organized into linked lists, instead of a flat registry.
+
+`chrdevs` is an array of pointers, each pointing to a linked list of `struct char_device_struct`.
+
+| Field | Description |
+| ----- | ----------- |
+| `next`  | Points to the next `struct char_device_struct` in the linked list. |
+| `major` | The major number reserved by the driver. |
+| `baseminor` | The lower bound minor number in the range of minor numbers reserved by the driver. |
+| `minorct`   | The count of minor numbers reserved by the driver. |
+| `name`  | The name of the driver. |
+
+
+The highlight of this data structure is how the linked lists are populated. It uses `(major % CHRDEV_MAJOR_HASH_SIZE)` to determine the index of the linked list to which a `struct char_device_struct` should be added.
+
+  - When a driver reserves major 10 for 0-20 minor range, its `char_device_struct` goes into `chrdevs[10]`, as `(10 % 255) is 10`. When a driver reserves major 10, but for 60-100 minor range, its `char_device_struct` goes into the same linked list.
+  - When a driver reserves major 265 for any minor range, its `char_device_struct` also goes into the `chrdevs[10]` linked list as `(265 % 255) is 10`.
+
+A `char_device_struct` only declares a range reservation. How is that range used, whether it is used at all, etc, is not any of its business. It lives until the driver is unloaded, or it frees the reservation.
+
+
+## Userspace Representation of a Composite Device Struct
+
+When the driver prepares a composite device struct for export, it assigns it a minor number corresponding to a major number.
+
+The composite device will have a file operations table defined for it by the driver.
+
+The device number (major-minor pair) and the file operations table for that composite device struct are packed into a `struct cdev` instance. It is defined in [*root/include/linux/cdev.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/cdev.h?h=v7.2.12).
 
 ```c
 struct cdev {
@@ -1479,14 +1572,108 @@ Below is a description of the relevant fields.
 | `dev`   | The starting 32-bit device number encoding the Major and starting Minor number. |
 | `count` | The number of consecutive minor numbers this `cdev` instance is responsible for handling. |
 
+I know the description of `dev` is 180deg opposite, `count` is completely out of place, and what's the point of `list`. Just wait.
+
+
+## Registry of all the registered Userspace Representations
+
+`cdev_map` is the central character device registry. It is a record of all the composite device structures that are exported to the userspace.
+
+It is a `kobj_map` instance, defined in [*root/drivers/base/map.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/base/map.c?h=v7.2.12). The file also includes the operations defined on a `kobj_map`.
+
+```c
+struct kobj_map {
+  struct probe {
+    struct probe *next;
+
+    dev_t dev;
+    unsigned long range;
+
+    kobj_probe_t *get;
+    void *data;
+  } *probes[255];
+
+  struct mutex *lock;
+};
+```
+  - 2 members in `struct probe` are omitted.
+
+`kobj_map` declares an array of pointers to `struct probe` linked lists. It is initialized on the heap by `kobj_map_init()`. `cdev_map`, which is the pointer to it, is declared on static storage.
+
+| Field   | Description |
+| -----   | ----------- |
+| `next`  | Points to the next `struct probe` in the linked list. |
+| `dev`   | The starting device number (major-minor pair) for this range. |
+| `range` | The number of consecutive minor numbers this `probe` covers. |
+| `get`   | The function pointer used to look up the actual device. *More on this later.* |
+| `data`  | Pointer to the actual device data, i.e. `struct cdev` for character devices. |
+
+
+`kobj_map` is quite similar to `chrdevs`.
+  - Both declare an array of 255 pointers, each pointing to the head of a linked list.
+  - The linked lists are populated using `(major % 255)`.
 
 ---
 
-Take the example of `nvme_ctrl`. It is defined in [*root/drivers/nvme/host/nvme.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/nvme/host/nvme.h?h=v7.2.12#n341). It embeds a `struct cdev` instance (line 365).
+To understand this central registry, we have to understand `kobj_map`. There are four operations defined on it. I recommend opening [*root/drivers/base/map.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/base/map.c?h=v7.2.12) and walk along.
 
----
+### kobj_map_init()
 
-Whenever the driver registers for a major number, the middleman assigns a `struct char_device_struct`.
+It is called by `chrdev_init()` in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n671). It allocates a `kobj_map` instance on heap and returns a pointer to it, which is stored in `cdev_map`.
 
-A driver claims a major number and a minor range. Another driver can claim the same major number but a different minor range.
+All the linked lists are initialized to a sentinel `struct probe` node. This sentinel node is very important as it is responsible to load a module on demand (if it not exist already).
 
+The function allocates a zero-initialized instances of `struct probe` on heap. This instance is the sentinel node (probe) in every linked list.
+
+It's device number (dev) is set to 1 and the range is set to `~0UL`. First of all, a minor number spans across 20 bits, then why the range variable is a 64-bit field? I am not sure why!
+
+Let's understand this sentinel probe.
+
+We know that major 0 is reserved. So, the smallest valid major is 1.
+  - Since the lower bits of `dev` represents the minor number, when major is 1, `dev` is `1 << 20`. i.e. `1,048,576`. Here, the minor number is 0.
+  - Therefore, the smallest possible value of `dev` is 1,048,576. Every valid device number is greater than or equal to 1,048,576.
+
+When the range is set to `~0UL`, it means all 1s.
+
+Every VFS inode will be initialized with a valid `i_rdev`, which will always be greater than or equal to `1,048,576`. Thus, `dev=1` becomes the sentinel node. Because it's range is `~0UL`, it will match all the possible minor numbers.
+
+It's highly likely that it doesn't make any sense right now, at least to me. Next we will discuss `kobj_map()`, which will make this clear. We will discuss `base_probe` there as well.
+
+### kobj_map()
+
+This function insert a `struct probe` corresponding to a `struct cdev` in an appropriate linked list.
+
+It is called by `cdev_add()`, defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n466).
+
+The table below lists the arguments this function takes and the actual arguments passed by `cdev_add()`.
+
+| Argument in `kobj_map()` | Argument in `cdev_add()` | Description | 
+| ---- | ---- | ---- |
+| `struct kobj_map *domain` | `cdev_map` | Pointer to the central registry. |
+| `dev_t dev` | `dev` | The device number. |
+| `unsigned long range` | `count` | The number of minor numbers this `cdev` covers. |
+| `struct module *module` | `NULL` |
+| `kobj_probe_t *probe` | `exact_match` | More on this below. |
+| `int (*lock)(dev_t, void *)` | `exact_lock` | No need to understand. |
+| `void *data` | `p` | Pointer to the `struct cdev` instance. |
+
+
+It starts by computing `n`. This is the most confusing thing in my opinion.
+
+`MAJOR(dev)` is defined in [root/include/linux/kdev_t.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/kdev_t.h?h=v7.2.12#n10).
+```c
+#define MINORBITS	20
+#define MAJOR(dev)	((unsigned int) ((dev) >> MINORBITS))
+```
+
+It is calculating the major number corresponding to two inputs. `dev` makes sense, but what does `dev + range - 1` mean? For `MAJOR`, both are treated as device numbers.
+
+  - `dev` becomes `(major << 20) | minor`. So, `dev + range - 1` would be `(major << 20) | (minor + range - 1)`.
+  - Therefore, `dev + range - 1` gives us the highest possible device number in the given range.
+
+If a range is small, `MAJOR(dev)` and `MAJOR(dev + range - 1)` will be equal. But, if a range is large enough that it crosses the current major number boundary, then they will be unequal.
+  - For example, take major 10 and baseminor 1,048,570. The device number would be: 11534336.
+  - If the range is 40, `dev + range - 1` would be 11534376, which corresponds to major 11. So the range is split into across two majors, which is what `n` represents.
+
+It is logical to think that every `cdev` is about a range of minor !!
+> EXPLAIN HOW A CHARACTER DEVICE CAN MANAGE MULTIPLE MINOR DEVICES FIRST.
