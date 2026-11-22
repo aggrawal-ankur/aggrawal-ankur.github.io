@@ -1844,10 +1844,11 @@ It allocates one on heap (`kzalloc_obj`, so zero-initialized), initializes its l
 
 ### chrdev_open()
 
-It is called every single time a VFS inode corresponding to a character device file is opened.
-> *There is one nuance, which will be cleared later.*
+In [root/fs/inode.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/inode.c?h=v7.2.12#n2679), there is a function called `init_special_inode`.
+  - It runs whenever a VFS inode is created for a device file.
+  - It takes an inode and sets the file_operations table pointer. On line 2684, it sets it to `&def_chr_ops` for character devices.
 
-All the VFS inodes corresponding to a character device have their `file_operations` table set to `&def_chr_ops`, which is defined in char_dev.c.
+Therefore, all the VFS inodes corresponding to a character device have their `file_operations` table set to `&def_chr_ops` initially, which is defined in char_dev.c.
 ```c
 const struct file_operations def_chr_fops = {
 	.open = chrdev_open,
@@ -1856,6 +1857,113 @@ const struct file_operations def_chr_fops = {
 ```
   - Don't worry about `.llseek`.
 
----
+Whenever a character device file is opened using the `open()` syscall, the control eventually reaches `def_chr_ops.open()`, which resolves to `chrdev_open()`.
+> *We will talk about this flow in detail later.*
 
-It receives the `struct file` pointer and the `struct inode` pointer.
+That's how `chrdev_open()` receives the `struct file` and `struct inode` pointers.
+
+It calls `kobj_lookup()` with `inode->i_rdev` as the device number. As discussed,
+  - if the `cdev` representation is already registered with the `cdev_map`, a pointer to the `kobject` instance inside it is returned.
+  - if the `cdev` representation is not registered yet, `kobj_lookup()` tries to load the corresponding kernel module and get the device registered with it. If succeeded, the expected `kobject` pointer is returned, otherwise, `NULL`.
+
+If `kobj_lookup()` returns `NULL`, `-ENXIO` is returned, which means no such device or address ([root/include/uapi/asm-generic/errno-base.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/asm-generic/errno-base.h?h=v7.2.12#n10)).
+
+If not null, `container_of()` is used to find the `struct cdev` instance. This pointer is cached in `inode->i_cdev` so that successive operations don't have to undergo lookup.
+
+Next it extracts the actual `file_operations` table associated with this character device and assign that pointer to the `struct file` instance's `f_op`.
+
+If the driver's provided file pointer table has an entry for the `open()` fn, it is called. It is not mandatory, but many drivers provide it. Two possible reasons are:
+  1. When a `cdev` represents multiple devices, the `open()` resolves the actual device associated with the minor, as the cdev only represents the range record here. That function further updates the file operations table pointer and attaches driver specific state to the `struct file` instance.
+  2. If the driver involves per instance data, that needs to be attached to the file instance, and the open() does that.
+
+That's `chrdev_open()` for you.
+
+----
+
+We can notice that everything here is structured around `struct kobject`. When both char devices and block devices used `kobj_map`, `struct kobject` acted as a stable anchor inside a struct which is not known to `kobj_map`.
+
+# Miscellaneous Devices
+
+If a driver wish to define only one device for the userspace accessibility, they would have to claim one major and one minor. This thing happening on a large scale would pollute the cdev_map, slowing down lookups, among other things that I would love to know.
+
+Then there are devices which offer the same feature multiple times.
+
+Earlier, major numbers were scarce (255 only). For every device register, you need a major before you get a minor.
+
+For these reasons, miscellaneous devices were introduced. The miscellaneous subsystem reserves a fixed major number, i.e. 10, and any driver can hook into it and request a minor number for their device.
+
+As per the rule, the miscellaneous subsystem gets a cdev, and the devices that hook into it don't. Instead of `struct cdev`, they get a `struct miscdevice`, which is strictly for one device. No range drama. The misc subsystem ensures connecting the device with the userspace.
+
+The virtualization machine extensions, which are exported as KVM, also use the miscellaneous subsystem. Remember (10/232) in the output of `file`? That's the identity of the `/dev/kvm` character device file, i.e. major 10 and minor 232.
+
+```bash
+$ file /dev/kvm                               
+/dev/kvm: character special (10/232)
+```
+
+The whole subsystem is defined in two files: [root/drivers/char/misc.c]() and [root/include/linux/miscdevice.h]().
+
+## misc_init()
+
+It claims the major number 10 for the misc subsystem by registering a cdev for it. 
+
+The highlight of this is `&misc_ops`, which is passed in place of the `file_operations` table for this character device.
+
+```c
+static const struct file_operations misc_fops = {
+	.owner   = THIS_MODULE,
+	.open    = misc_open,
+	.llseek  = noop_llseek,
+};
+```
+
+It defines `misc_open` as the `open` function. We will explore it soon.
+
+## misc_register()
+
+It is used to register a device in the miscellaneous subsystem.
+
+The miscellaneous subsystem allows a driver to request a minor number in two ways.
+  1. A fixed minor.
+  2. A dynamically chosen minor.
+
+Thr driver creates a `miscdevice` struct.
+```c
+struct miscdevice {
+  int minor;
+  const char *name;
+  const struct file_operations *fops;
+  struct list_head list;
+  struct device *parent;
+  struct device *this_device;
+  const struct attribute_group **groups;
+  const char *nodename;
+  umode_t mode;
+};
+```
+
+If the minor is set with a number less than 255, it's a fixed minor number request. If the minor is set to 255, it is a dynamic minor request.
+
+The function starts by evaluating what type of request it is.
+
+If the minor is set to anything else, i.e. `>255`, the request is rejected. Otherwise, the process of minor number allocation is started.
+
+If it is a dynamic minor request, `misc_minor_alloc()` is called directly to find and allocate a free minor number.
+
+If it is a fixed minor request, the driver traverses `misc_list`, a doubly linked list of all the registered miscellaneous devices to check if the request minor number is free. If it is, `misc_minor_alloc()` is called to allocate it.
+
+If allocation was successful, the registration is added into `misc_list`.
+
+## misc_open()
+
+It starts by extracting the minor number from `inode->i_rdev`.
+
+It traverses the `misc_list` linked list and find the node that matches with the minor number in the inode.
+
+If a match is found, the pointer to the `struct miscdevice` is cached in `c` and the pointer to the `file_operations` table is extracted from it and cached into `new_ops`.
+
+If it is a fixed minor (i.e. `<255`) and `new_ops` is `NULL`, the driver associated with the `miscdevice` is not in the memory yet. So the module is loaded dynamically with `request_module()` and the list is traversed again to find the miscdevice pointer and the file operations table. If it has failed, we return "No such device or address".
+
+The `miscdevice` is attached to the `struct file` instances `private_data` field. Why thought? And the `file_operations` table, which was oreviously for the misc system, is replaced by the driver's table. If the driver defines it's own `open()`, it is executed, otherwise returned.
+
+That's the miscellaneous subsystem.
