@@ -1572,8 +1572,18 @@ Below is a description of the relevant fields.
 | `dev`   | The starting 32-bit device number encoding the Major and starting Minor number. |
 | `count` | The number of consecutive minor numbers this `cdev` instance is responsible for handling. |
 
-I know the description of `dev` is 180deg opposite, `count` is completely out of place, and what's the point of `list`. Just wait.
 
+Earlier we have discussed that each composite device struct is classified into a block device or a character device if it needs to be exported to the userspace. That means, one `struct cdev` corresponds to one composite device struct, which either represents a whole device, or a particular functionality in the device. This thing is still true, but there is one more thing.
+
+We have discussed that a device can have multiple features which might be distinct enough to be represented as separate composite device representations. What about devices that have the same features multiple times? For example, take a USB Hub. It has multiple identical USB ports.
+  - We can simply create one `struct cdev` representing the entire USB Hub.
+  - We can assign each USB port's device representation a minor number and a function that directs control to the exact USB port based on the minor number.
+
+That's the idea behind one one cdev managing multiple devices. That's why `struct cdev` has the `count` field. It indicates the total number of devices (minor numbers) this `struct cdev` manages.
+  - When there one `struct cdev` per composite device, `count` is simply 1 and the device number represents the exact device token.
+  - When there is one `struct cdev` for more than one composite device representation, the count of devices is indicated by `count` and the minor number in the device number is the `baseminor` of the minor range.
+
+This detail is very crucial to understand `/dev/kvm` as well.
 
 ## Registry of all the registered Userspace Representations
 
@@ -1623,9 +1633,9 @@ It is called by `chrdev_init()` in [*root/fs/char_dev.c*](https://git.kernel.org
 
 All the linked lists are initialized to a sentinel `struct probe` node. This sentinel node is very important as it is responsible to load a module on demand (if it not exist already).
 
-The function allocates a zero-initialized instances of `struct probe` on heap. This instance is the sentinel node (probe) in every linked list.
+The function allocates a zero-initialized instance of `struct probe` on heap. This instance is the sentinel node (probe) in every linked list.
 
-It's device number (dev) is set to 1 and the range is set to `~0UL`. First of all, a minor number spans across 20 bits, then why the range variable is a 64-bit field? I am not sure why!
+Its device number (dev) is set to 1 and the range is set to `~0UL`. First of all, a minor number spans across 20 bits, then why the range variable is a 64-bit field? I am not sure why!
 
 Let's understand this sentinel probe.
 
@@ -1635,19 +1645,19 @@ We know that major 0 is reserved. So, the smallest valid major is 1.
 
 When the range is set to `~0UL`, it means all 1s.
 
-Every VFS inode will be initialized with a valid `i_rdev`, which will always be greater than or equal to `1,048,576`. Thus, `dev=1` becomes the sentinel node. Because it's range is `~0UL`, it will match all the possible minor numbers.
+Every VFS inode will be initialized with a valid `i_rdev`, which will always be greater than or equal to `1,048,576`. Thus, `dev=1` becomes the sentinel node. Because its range is `~0UL`, it will match all the possible minor numbers.
 
-It's highly likely that it doesn't make any sense right now, at least to me. Next we will discuss `kobj_map()`, which will make this clear. We will discuss `base_probe` there as well.
+It's highly likely that it doesn't make any sense right now, at least to me. Next we will discuss `kobj_map()`, which will make this clear. We will discuss `base_probe` in `kobj_lookup()`.
 
 ### kobj_map()
 
-This function insert a `struct probe` corresponding to a `struct cdev` in an appropriate linked list.
+This function inserts a `struct probe` corresponding to a `struct cdev` in an appropriate linked list.
 
 It is called by `cdev_add()`, defined in [*root/fs/char_dev.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/char_dev.c?h=v7.2.12#n466).
 
 The table below lists the arguments this function takes and the actual arguments passed by `cdev_add()`.
 
-| Argument in `kobj_map()` | Argument in `cdev_add()` | Description | 
+| Argument Expected By `kobj_map()` | Argument Provided By `cdev_add()` | Description | 
 | ---- | ---- | ---- |
 | `struct kobj_map *domain` | `cdev_map` | Pointer to the central registry. |
 | `dev_t dev` | `dev` | The device number. |
@@ -1658,7 +1668,7 @@ The table below lists the arguments this function takes and the actual arguments
 | `void *data` | `p` | Pointer to the `struct cdev` instance. |
 
 
-It starts by computing `n`. This is the most confusing thing in my opinion.
+It starts by computing `n`. This is the most confusing thing in my understanding.
 
 `MAJOR(dev)` is defined in [root/include/linux/kdev_t.h](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/kdev_t.h?h=v7.2.12#n10).
 ```c
@@ -1673,7 +1683,179 @@ It is calculating the major number corresponding to two inputs. `dev` makes sens
 
 If a range is small, `MAJOR(dev)` and `MAJOR(dev + range - 1)` will be equal. But, if a range is large enough that it crosses the current major number boundary, then they will be unequal.
   - For example, take major 10 and baseminor 1,048,570. The device number would be: 11534336.
-  - If the range is 40, `dev + range - 1` would be 11534376, which corresponds to major 11. So the range is split into across two majors, which is what `n` represents.
+  - If the range is 40, `dev + range - 1` would be 11534376, which corresponds to major 11. So the range is split across two majors, which is what `n` represents.
 
-It is logical to think that every `cdev` is about a range of minor !!
-> EXPLAIN HOW A CHARACTER DEVICE CAN MANAGE MULTIPLE MINOR DEVICES FIRST.
+The thing that is disturbing here is why a driver would choose a range which splits across two majors? I mean, the driver has all the information to prevent it. It has to pass the `baseminor` and the count of minor numbers. It can simply ensure that the range does not cross the major number boundary.
+
+Fine. For some reason, the driver can request a range which splits across two majors. Why does `kobj_map` allows it? Why it doesn't deny that? I understand that the authors/maintainers are smarter and knowledgeable than me. If they have settled on this design, there is some reason behind it and I just want to know that. Simple.
+
+Therefore, `n` represents the number of `struct probe` instances that will be inserted in the linked list.
+
+Since there are only 255 linked lists, a value of `n` greater than 255 is resolved to 255.
+
+For normal cases, this doesn't seem to be bothersome. It will be simply 1.
+
+For some reason, the major number is called `index`, which doesn't make sense.
+  - If `index` implies a position in an array, then it has to be used directly to subscript into the array. But `MAJOR(dev)` doesn't correspond to an index on itself.
+  - The index is computed as `MAJOR(dev) % 255`, which is what the `for` loop uses as well.
+
+Then we allocate `n` units of `struct probe` on heap. Again, for normal cases, this would be 1. Each probe's members are set as per the values provided by `cdev_add()`.
+
+Next we traverse the `kobj_map` instance to find the correct linked list.
+
+`p` is rewound `n` times as it is proceeded `n` times by the previous for loop so it was pointing one past the array of `struct probe`(s) created by `kmalloc_obj`. As usual, in the normal case, it will be just 1.
+
+In normal cases, it should be pretty much:
+```c
+struct probe **s = &domain->probes[index % 255];
+
+while (*s && (*s)->range < range)
+  s = &(*s)->next;
+
+p->next = *s;
+*s = p;
+```
+
+It's a classic loop to maintain a sorted linked list. In any case, the new probe is inserted before the sentinel probe.
+
+And it is done.
+
+### kobj_unmap()
+
+It is called by `cdev_unmap()`.
+
+It starts with the same calculation of `n` and extraction of the major number in `index`. In normal cases, the outer `for` loop is a single iteration.
+
+We identify the linked list and traverse it to find the probe we want to remove. That probe that has the matching device number and range is unlinked from the list and a pointer to it is noted in `found`. We break out of the loop and `kfree()` is called to free the memory.
+
+### kobj_lookup()
+
+It is called by `chrdev_open()` every time the VFS inode corresponding to a character device file is opened.
+
+It starts by declaring three variables.
+  - Pointers to `struct kobject` and `struct probe`.
+  - A variable whose name is a little confusing, `best`, which is initialized to all 1s (`~0UL`).
+
+Now the code is declared before `retry` label. We will explore this soon.
+
+Now we start by identifying the linked list and starting with its first node.
+
+We create three more variables which resemble the `struct probe` fields. Next comes the actual logic that determines whether a `struct probe` is a match to the provided value of `dev`.
+
+```c
+if (p->dev > dev || p->dev + p->range - 1 < dev)
+  continue;
+```
+  - As we have discussed in `kobj_map_init()`, a valid value of `dev` is greater than or equal to 1,048,576.
+  - Consider this question: "***what has to be true for an input `dev` to match a particular `struct probe`?***"
+  - For an input `dev`, it strictly contains a major and a minor number. No baseminor or stuff. The `dev` for a `struct probe`, on the other hand, contains a major number and a baseminor.
+  - For an input `dev` to match a `struct probe`, it must be in the range: `[p->dev, p->dev + range -1]`. The condition above, on the other hand, is strictly checking if an input `dev` is outside of this range. Is it?
+    - `dev` must be greater than or equal to `p->dev` to fall in its range, not less than it.
+    - `dev` must be less than or equal to `p->dev + range -1` to fall in its range, not greater than it.
+  - Therefore, this condition implies that if an input `dev` is not in the range of the current probe, move to the next iteration.
+  - Suppose the whole linked list is traversed and we are on the sentinel probe now. Does this condition still hold? Let's check.
+    - `dev` must be greater than `p->dev` to be in the range. A valid `dev` is a decent non-zero value, while the `p->dev` of a sentinel probe is 1. That means, this condition will be false.
+    - `dev` must be less than `p->dev + range -1` to fall in its range. Now evaluate the expression. It is obvious to think that `1 || 2**20` will be `2**20`, and any valid `dev` (except the first one) could be greater than it. However, remember that `p->range`, while representing a 20-bit value, is not in a 20 bit container. It is inside a 64-bit container, with all bits 1. The expression is effectively `p->range < dev`, which is always going to be false because `dev` has the lowest bit set, while `p->range` has all the bits set.
+  - Therefore, if this `if` executes, the `probe` is not a match.
+
+For valid probes, the second `if` will always be false. Even if the probe reserves the whole 20-bit space, it will still be magnitudes small than `~0UL`. And the range can not be set more than 20-bits. If it is set so, it is the sentinel probe.
+
+We will get back to the second if block soon. The third one is not interesting for us, so we will leave it.
+
+So, if the first `if` has passed, either have found a matching probe, or the sentinel probe. Either way, we move forward. We extract `owner`, `data` and `probe` in locally reserved variables.
+
+Then we call the `probe` function with device, the index and some `void` data. Check if `kobj` is not `NULL`, and return `kobj`. Otherwise, we jump to `retry` label with `goto` and repeat the same thing.
+
+---
+
+`kobj_probe_t` is defined in [*root/include/linux/kobj_map.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/kobj_map.h?h=v7.2.12).
+
+```c
+typedef struct kobject *kobj_probe_t(dev_t, int *, void *);
+```
+
+I am more tuned to the asterisk being on the left side. When it is on the right side, it confuses me.
+```c
+typedef struct kobject* kobj_probe_t(dev_t, int *, void *);
+```
+
+`kobj_probe_t` is an alias to a function that takes 3 arguments and returns a pointer to a `struct kobject` instance.
+> *It is a function type, basically.*
+
+`kobj_probe_t *probe` declares `probe` as pointer to `kobj_probe_t` function.
+
+---
+
+If we open `char_dev.c`, we can find two functions with `strut kobject*` as their type. Both are fairly simple.
+```c
+static struct kobject*
+exact_match(dev_t dev, int *part, void *data)
+{
+	struct cdev *p = data;
+	return &p->kobj;
+}
+
+static struct kobject*
+base_probe(dev_t dev, int *part, void *data)
+```{
+	if (request_module("char-major-%d-%d", MAJOR(dev), MINOR(dev)) > 0)
+		/* Make old-style 2.4 aliases work */
+		request_module("char-major-%d", MAJOR(dev));
+
+	return NULL;
+}
+```
+
+When `kobj_map()` is called by `cdev_add()`, it passes `exact_match()` as the `probe` function argument required by `kobj_map()`. Therefore, every non-sentinel `struct probe` has its `probe` function pointer pointing to this `exact_match()` function. For sentinel probes, the `probe` function pointer points to the `base_probe()` function.
+
+If the matched probe is not the sentinel probe, `exact_match` is called and the pointer to the `struct kobject` instance inside the `struct cdev` instance is extracted and returned. A pointer to the `struct cdev` instance associated with the device is stored in `p->data` is passed to it. Remember, `kobj_map` was used by block devices as well, which explains why `data` is of the type `void*`. Later on, `chrdev_open()` operates on it, which we will discuss shortly.
+
+If it was the sentinel probe, then `base_probe` is called, which calls `request_module()`.
+
+You might wonder what is `*index`. Both the probe functions expect itt and none of it actually use it. So I don't know what's the point of it. Let's ignore that for now.
+
+In case of the sentinel probe, `request_module()` is called, which initiates the process of loading the relevant kernel module. We don't have to understand how it does it.
+
+`request_module()` can succeed, or fail. Regardless of that, `NULL` is returned to indicate the sentinel probe has tried loading the module and we can go retry the lookup.
+
+Loading a module doesn't only means loading it in the memory. It has to be initialized. When the module initializes itself, it sets up the relevant device representations in memory and updated `cdev_map`. If the module was loaded successfully and no error occurred while updating the `cdev_map`, the entry we were looking for is now present in the `cdev_map`. And `kobj_lookup()` will now succeed, so a retry is triggered with the help of `goto`.
+
+This time, when the fn reaches the second if block, it will fail it, regardless of the module was loaded or not. How?
+  - `best` was initialized with `~0UL` and it was reduced by 1 in the previous attempt. If module loading succeeded, the current probe is a non-sentinel probe. Even if all the 20 bits of the range are set, it is still magnitudes smaller than `~0UL`.
+  - If module loading failed, p->range would be `~0UL` as it is the sentinel node, and subtracting one would make it the same as `best`, which indicates that we have already tried module loading, which has failed, so exit now.
+
+That's how a valid probe is searched. Now let's read char_dev.c. There are lots of them, which is obvious as they represent the whole lifecycle of it, but we don't need that much depth.
+
+----
+
+### cdev_init()
+
+It takes a pointer to the `struct cdev` in the composite device struct. It iniatlizes all the members to zero.
+  - Initializes the inode list head.
+  - Initializes the kobject.
+  - Sets its file pointer to the table of file operations passed by the driver.
+
+### cdev_alloc()
+
+We know that `struct cdev` could be embedded directly in the composite device struct, or could be allocated on heap when a case requires it. This function is used for that purpose.
+> *We will see where it is used later.*
+
+It allocates one on heap (`kzalloc_obj`, so zero-initialized), initializes its list head and kobject, and returns a pointer to it.
+
+### chrdev_open()
+
+It is called every single time a VFS inode corresponding to a character device file is opened.
+> *There is one nuance, which will be cleared later.*
+
+All the VFS inodes corresponding to a character device have their `file_operations` table set to `&def_chr_ops`, which is defined in char_dev.c.
+```c
+const struct file_operations def_chr_fops = {
+	.open = chrdev_open,
+	.llseek = noop_llseek,
+};
+```
+  - Don't worry about `.llseek`.
+
+---
+
+It receives the `struct file` pointer and the `struct inode` pointer.
