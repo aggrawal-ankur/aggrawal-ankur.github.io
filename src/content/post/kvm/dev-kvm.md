@@ -1967,3 +1967,148 @@ If it is a fixed minor (i.e. `<255`) and `new_ops` is `NULL`, the driver associa
 The `miscdevice` is attached to the `struct file` instances `private_data` field. Why thought? And the `file_operations` table, which was oreviously for the misc system, is replaced by the driver's table. If the driver defines it's own `open()`, it is executed, otherwise returned.
 
 That's the miscellaneous subsystem.
+
+## ioctl(): Input/Output Control System Call
+
+The driver exists in the kernel space, hence the functions it defines also exist there. These functions are accessed by a userspace application.
+
+Userspace apps rely on system calls to transition to ring 0. That means, we need the same syscall mechanism to access these driver functions. If every entrypoint function in a driver is defined as a system call, that will pollute the system call table (Linux ABI), but we need the same mechanism.
+
+Basically, we need a method to define custom system calls, such that
+  1. the core system calls table remains untouched,
+  2. access to arbitrary entrypoint functions inside a driver can be provided as system calls,
+  3. no central registry of these "custom system calls" is maintained.
+  4. these custom system calls have a transient existence, where they exist as long as the provider exist (driver is in memory) and they vanish once the driver is unloaded from memory.
+
+To achieve this, the kernel has created a system call whose only purpose is to allow a driver to export its entrypoint functions as system calls.
+
+This system call is `ioctl()`. It stands for "***Input/Output Control***".
+
+It is defined in [root/fs/ioctl.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/ioctl.c?h=v7.2.12).
+
+We know that every driver defines a `file_operations` table, which contains pointers to all the functions it wants to export.
+
+Let's look at [root/virt/kvm/kvm_main.c](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/virt/kvm/kvm_main.c?h=v7.2.12).
+
+Search for "struct file_operations". We can find 9 occurrences of it, 8 of which are for actual pointer tables, of which, four are relevant to us.
+```c
+static struct file_operations kvm_vcpu_fops = {
+	.release        = kvm_vcpu_release,
+	.unlocked_ioctl = kvm_vcpu_ioctl,
+	.mmap           = kvm_vcpu_mmap,
+	.llseek		= noop_llseek,
+	KVM_COMPAT(kvm_vcpu_compat_ioctl),
+};
+
+static struct file_operations kvm_device_fops = {
+	.unlocked_ioctl = kvm_device_ioctl,
+	.release = kvm_device_release,
+	KVM_COMPAT(kvm_device_ioctl),
+	.mmap = kvm_device_mmap,
+};
+
+static struct file_operations kvm_vm_fops = {
+	.release        = kvm_vm_release,
+	.unlocked_ioctl = kvm_vm_ioctl,
+	.llseek		= noop_llseek,
+	KVM_COMPAT(kvm_vm_compat_ioctl),
+};
+
+static struct file_operations kvm_chardev_ops = {
+	.unlocked_ioctl = kvm_dev_ioctl,
+	.llseek		= noop_llseek,
+	KVM_COMPAT(kvm_dev_ioctl),
+};
+```
+
+`kvm_chardev_ops` is registered with `struct miscdevice` instance corresponding to the character device file `/dev/kvm`. It handles system-wide capabilities. Check line 5586.
+```c
+static struct miscdevice kvm_dev = {
+	KVM_MINOR,
+	"kvm",
+	&kvm_chardev_ops,
+};
+```
+
+`kvm_vm_fops` handles the VM-wide configurations.
+
+`kvm_vcpu_fops` handles vcpu related stuff.
+
+`kvm_device_fops` is used for emulated hardware devices inside a virtual machine.
+
+---
+
+Remember the `open()` function in `struct cdev` instance that manages multiple devices (minors)? It basically is a switch case that traverses a list and finds the appropriate `file_operations` table.
+
+Similarly, `unlocked_ioctl` is a function pointer to a function that takes the ioctl code and argument and resolves it to the intended driver function.
+
+That's how you define custom system calls.
+
+# Anonymous FS
+
+If you have already explored an elementary `kvm` guide, you'd know that there are three file descriptors involved here. This is an excerpt from a very famous guide, called [kvm-hello-world](https://github.com/dpw/kvm-hello-world/blob/master/kvm-hello-world.c).
+
+```c
+struct vm {
+  int sys_fd;
+  int fd;
+  char *mem;
+};
+vm->sys_fd = open("/dev/kvm", O_RDWR);
+vm->fd = ioctl(vm->sys_fd, KVM_CREATE_VM, 0);
+
+struct vcpu {
+  int fd;
+  struct kvm_run *kvm_run;
+};
+vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
+```
+  - One fd for `/dev/kvm`.
+  - One fd for the `vm`.
+  - One fd for the `vcpu`.
+
+If you recall our understanding of the VFS, we know that a file descriptor is just an index into the file descriptor table, which contains pointers to `struct file` instances. Each `struct file` instance is associated with a `struct inode` instance.
+
+We are receiving `fd`s here, so it is natural to ask which `struct file` instances they are associated with.
+  - `vm->sys_fd` corresponds to the `struct file` instance of the VFS inode associated with `/dev/kvm`.
+  - What does `vm->fd` and `vcpu->fd` correspond to?
+
+They belong to an anonymous VFS inode. Let's understand them.
+
+---
+
+Physical devices and silicon capabilities are a piece of hardware. But in-memory resources, or virtual devices, have no hardware backing them.
+> *Remember, the driver only represents the operations defined on the files, not the resource itself.*
+
+
+There is a filesystem, called the anonymous filesystem, or `anon_inodefds`, which is a pseudo filesystem. It is completely invisible to the userspace. It is never mounted anywhere. It is defined in [root/fs/anon_inode.c]().
+
+This filesystem only consists of one inode allocated by `anon_inode_init()` during boot. Whenever a subsystem requires a file descriptor to a resource that has no physical backing, it asks this inode to return a fd to it using `anon_inode_getfile()`.
+
+You may ask, "who deals with the `file_operations` table drama?" It is literally passed to `anon_inode_getfile()` as an argument, so as driver's private data. It is literally assigned and that's it.
+
+```c
+static struct file *__anon_inode_getfile(
+	const char *name,
+	const struct file_operations *fops,
+	void *priv, int flags,
+	const struct inode *context_inode,
+	bool make_inode
+){
+  struct file* file;
+  ....
+
+	file = alloc_file_pseudo(
+    inode, anon_inode_mnt, name, 
+    flags & (O_ACCMODE | O_NONBLOCK), 
+    fops
+  );
+
+  file->private_data = priv;
+  return file;
+}
+```
+
+`alloc_file_pseudo()` is define in [root/fs/file_table.c](). It calls `alloc_file()`,  which calls `file_init_path()`, which initializes this `struct file` instances f_op to the pointer passed by the caller.
+
+That's it. The whole drama is resolved instantly.
