@@ -76,31 +76,45 @@ const giscusThemes = import.meta.env.PROD
 	<div class="post-shell">
 		<div class="post-main" data-pagefind-body>
 			<div id="blog-hero" class="post-header">
-				<div class="post-eyebrow">
-					Posts <span class="sep">·</span> {eyebrowDate}
+				<div class="post-meta-line">
+					<span class="post-eyebrow">
+						Posts <span class="sep">·</span> {eyebrowDate}
+					</span>
+					{draft && <span class="draft-flag">(Draft)</span>}
 				</div>
-				{draft && <span class="draft-flag">(Draft)</span>}
+
 				<h1 class="post-title">{title}</h1>
-				<p class="byline">
-					{authorName && <>By {authorName}<span class="sep">·</span></>}{bylineDate}{readingTime && (
-						<>
-							<span class="sep">·</span>{readingTime}
-						</>
+
+				{description && (
+					<p class="post-description">{description}</p>
+				)}
+
+				<div class="post-byline-meta">
+					<span class="byline">
+						{authorName && <>By {authorName}<span class="sep">·</span></>}{bylineDate}{readingTime && (
+							<>
+								<span class="sep">·</span>{readingTime}
+							</>
+						)}
+					</span>
+					{updatedDate && (
+						<span class="post-updated">
+							<span class="sep">·</span>
+							Updated · <time datetime={updatedDate.toISOString()}>
+								{formatBylineDate(updatedDate)}
+							</time>
+						</span>
 					)}
-				</p>
+				</div>
+
 				{!!tags?.length && (
 					<div class="post-tags">
-						TAGS ·
 						{tags.map((tag, i) => (
-							<><a class="tag-link" data-pagefind-filter="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>{tag}</a>{i < tags.length - 1 && <span class="sep">·</span>}</>
+							<Fragment key={tag}>
+								<a class="tag-link" data-pagefind-filter="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>#{tag}</a>
+								{i < tags.length - 1 && <span class="sep">·</span>}
+							</Fragment>
 						))}
-					</div>
-				)}
-				{updatedDate && (
-					<div class="post-updated">
-						Last Updated · <time datetime={updatedDate.toISOString()}>
-							{formatBylineDate(updatedDate)}
-						</time>
 					</div>
 				)}
 			</div>
@@ -202,40 +216,48 @@ const giscusThemes = import.meta.env.PROD
 		background: var(--paper);
 	}
 
+	.post-header {
+		margin-bottom: 22px;
+	}
+
+	.post-meta-line {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+
 	.post-eyebrow {
 		font-family: var(--font-mono);
-		font-size: 11.5px;
+		font-size: 11px;
 		font-weight: 500;
-		letter-spacing: 0.14em;
+		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		color: hsl(var(--theme-text) / 0.55);
-		margin-bottom: 22px;
 		font-variant-numeric: tabular-nums;
 		font-feature-settings: "tnum";
 	}
 	.post-eyebrow .sep {
 		color: var(--faint);
-		margin: 0 8px;
+		margin: 0 4px;
 	}
 
 	.draft-flag {
-		display: inline-block;
 		font-family: var(--font-mono);
-		font-size: 11.5px;
-		color: #c14a2b;
-		margin-bottom: 12px;
-		letter-spacing: 0.08em;
+		font-size: 11px;
+		color: var(--status-flag, #d97706);
+		letter-spacing: 0.06em;
 	}
 
 	.post-title {
 		font-family: var(--font-serif);
 		font-weight: 500;
-		font-size: clamp(28px, 5.5vw, 46px);
-		letter-spacing: -0.005em;
-		word-spacing: 0.03em;
-		line-height: 1.1;
+		font-size: clamp(26px, 4vw, 36px);
+		letter-spacing: -0.01em;
+		word-spacing: 0.02em;
+		line-height: 1.18;
 		color: hsl(var(--theme-text));
-		margin: 0 0 18px;
+		margin: 0 0 10px;
 		word-wrap: break-word;
 		overflow-wrap: break-word;
 	}
@@ -245,68 +267,85 @@ const giscusThemes = import.meta.env.PROD
 		font-weight: 400;
 	}
 
-	.byline {
+	.post-description {
 		font-family: var(--font-serif);
 		font-style: italic;
 		font-size: 16.5px;
-		color: hsl(var(--theme-text-muted));
+		line-height: 1.55;
+		color: hsl(var(--theme-text) / 0.8);
 		margin: 0 0 14px;
-		line-height: 1.5;
+		max-width: var(--reading-width);
+	}
+
+	.post-byline-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 6px;
+		margin: 0 0 14px;
+	}
+
+	.byline {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 14.5px;
+		color: hsl(var(--theme-text-muted));
+		line-height: 1.4;
+		margin: 0;
 		font-variant-numeric: tabular-nums;
 		font-feature-settings: "tnum";
 	}
 	.byline .sep {
 		color: var(--faint);
-		margin: 0 6px;
+		margin: 0 4px;
 		font-style: normal;
-	}
-
-	.post-tags {
-		font-family: var(--font-mono);
-		font-size: 11px;
-		color: hsl(var(--theme-text) / 0.55);
-		letter-spacing: 0.08em;
-		margin-bottom: 32px;
-		word-break: break-word;
-	}
-	.post-tags .tag-link {
-		color: inherit;
-		text-decoration: none;
-		transition: color 0.2s ease;
-	}
-	.post-tags .tag-link::before {
-		content: "#";
-		color: var(--faint);
-		transition: color 0.2s ease;
-	}
-	.post-tags .tag-link:hover,
-	.post-tags .tag-link:hover::before {
-		color: hsl(var(--theme-accent));
-	}
-	.post-tags .tag-link:focus-visible {
-		outline: 2px solid hsl(var(--theme-accent));
-		outline-offset: 2px;
-		border-radius: 3px;
-	}
-	.post-tags .sep {
-		color: var(--faint);
-		margin: 0 6px;
 	}
 
 	.post-updated {
 		font-family: var(--font-mono);
 		font-size: 11px;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: hsl(var(--theme-text) / 0.5);
-		margin: -16px 0 32px;
+	}
+	.post-updated .sep {
+		color: var(--faint);
+		margin: 0 4px;
+	}
+
+	.post-tags {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.05em;
+		margin: 0 0 20px;
+	}
+	.post-tags .tag-link {
+		color: hsl(var(--theme-text) / 0.58);
+		text-decoration: none;
+		transition: color 0.18s ease;
+	}
+	.post-tags .tag-link:hover {
+		color: hsl(var(--theme-accent));
+	}
+	.post-tags .tag-link:focus-visible {
+		outline: 2px solid hsl(var(--theme-accent));
+		outline-offset: 2px;
+		border-radius: 2px;
+	}
+	.post-tags .sep {
+		color: var(--faint);
+		margin: 0 2px;
 	}
 
 	.rule {
 		height: 1px;
 		background: var(--hairline);
 		border: 0;
-		margin: 0 0 44px;
+		margin: 0 0 32px;
 		transition: background-color 0.35s ease;
 	}
 	/* Extra spacing so stacked footer blocks (post-end link, comments) read as intentional. */
@@ -427,16 +466,15 @@ const giscusThemes = import.meta.env.PROD
 	}
 
 	@media (max-width: 720px) {
-		.post-title { font-size: 30px; line-height: 1.15; }
-		.byline { font-size: 15.5px; }
-		.rule { margin-bottom: 32px; }
+		.post-title { font-size: 26px; line-height: 1.2; }
+		.byline { font-size: 14px; }
+		.rule { margin-bottom: 24px; }
 	}
 	@media (max-width: 420px) {
-		.post-eyebrow { font-size: 11px; margin-bottom: 18px; }
-		.post-eyebrow .sep { margin: 0 6px; }
-		.post-title { font-size: 26px; }
-		.byline { font-size: 14.5px; margin-bottom: 24px; }
-		.rule { margin-bottom: 26px; }
+		.post-title { font-size: 24px; }
+		.post-description { font-size: 15px; }
+		.byline { font-size: 13.5px; }
+		.rule { margin-bottom: 20px; }
 		.post-end { font-size: 14px; }
 	}
 
@@ -550,19 +588,6 @@ const giscusThemes = import.meta.env.PROD
 	.post-article a:hover {
 		color: hsl(var(--theme-accent));
 		text-decoration-color: hsl(var(--theme-accent));
-	}
-
-	.post-article :not(pre) > code {
-		font-family: var(--font-mono);
-		font-size: 14.5px;
-		background: var(--paper);
-		border: 1px solid var(--hairline);
-		padding: 1px 6px;
-		border-radius: 3px;
-		color: hsl(var(--theme-text-muted));
-		font-variant-numeric: tabular-nums;
-		font-feature-settings: "tnum";
-		transition: background-color 0.35s ease, border-color 0.35s ease;
 	}
 
 	.post-article pre {
@@ -792,28 +817,6 @@ const giscusThemes = import.meta.env.PROD
 		text-transform: uppercase;
 		color: hsl(var(--theme-text-muted));
 		margin-right: 8px;
-	}
-
-	.post-article table {
-		display: block;
-		width: var(--reading-width);
-		max-width: 100%;
-		overflow-x: auto;
-		border-collapse: collapse;
-		margin: 28px 0;
-		font-size: 15.5px;
-		font-family: var(--font-sans);
-		white-space: no-wrap;
-	}
-	.post-article th,
-	.post-article td {
-		text-align: left;
-		padding: 8px 12px;
-		border-bottom: 1px solid var(--hairline);
-	}
-	.post-article th {
-		font-weight: 500;
-		color: hsl(var(--theme-text));
 	}
 
 	.post-article hr {
