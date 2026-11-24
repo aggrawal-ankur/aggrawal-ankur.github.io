@@ -3,6 +3,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'src/content/drafts/**'
+      - '*.md'
+      - '.gitignore'
+      - '.vscode/**'
   workflow_dispatch:
 
 permissions:
@@ -16,8 +21,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: Check if rebuild needed
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.filter.outputs.should_build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect meaningful changes
+        id: filter
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: python3 .github/scripts/check-rebuild.py
+
   build:
     name: Build
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +64,7 @@ jobs:
         with:
           enablement: true
 
-      # `pnpm build_prod_site` runs `pnpm run clean && astro check && astro build`, then the
-      # `postbuild` script runs pagefind over dist/.
+      # `pnpm build_prod_site` runs clean, check, build, and pagefind over dist/.
       - run: pnpm build_prod_site
         env:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
@@ -50,7 +75,8 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: build
+    needs: [check, build]
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
