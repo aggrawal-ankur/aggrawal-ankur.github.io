@@ -7,7 +7,7 @@ export const siteConfig: SiteConfig = {
 		locale: "en-US",
 		options: {
 			day: "numeric",
-			month: "short",
+			month: "long",
 			year: "numeric",
 		},
 	},

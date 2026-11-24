@@ -13,7 +13,7 @@ const stampFormatter = new Intl.DateTimeFormat("en-US", {
 	year: "numeric",
 });
 
-const bylineFormatter = new Intl.DateTimeFormat("en-GB", {
+const bylineFormatter = new Intl.DateTimeFormat("en-US", {
 	day: "numeric",
 	month: "long",
 	year: "numeric",
