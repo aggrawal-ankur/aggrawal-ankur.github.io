@@ -2,6 +2,7 @@
 import { showcase } from "@/data/showcase";
 import { menuLinks, siteConfig } from "@/site-config";
 import { withBase } from "@/utils/path";
+import FontToggle from "../FontToggle.astro";
 import ThemeToggle from "../ThemeToggle.astro";
 
 const url = new URL(Astro.request.url);
@@ -58,7 +59,10 @@ const navIcons: Record<string, string> = {
 				))
 			}
 		</nav>
-		<ThemeToggle />
+		<div class="header-controls">
+			<FontToggle />
+			<ThemeToggle />
+		</div>
 	</div>
 </header>
 
@@ -86,6 +90,14 @@ const navIcons: Record<string, string> = {
 		display: flex;
 		align-items: center;
 		gap: 24px;
+	}
+	.header-controls {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+		flex-wrap: nowrap;
 	}
 	.nav {
 		display: flex;
@@ -145,7 +157,16 @@ const navIcons: Record<string, string> = {
 		}
 		.wordmark { grid-area: wordmark; }
 		.header-right { display: contents; }
-		.theme-toggle { grid-area: theme; justify-self: end; }
+		.header-controls {
+			grid-area: theme;
+			justify-self: end;
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			gap: 8px;
+			flex-shrink: 0;
+			flex-wrap: nowrap;
+		}
 		.nav {
 			grid-area: nav;
 			gap: 22px;

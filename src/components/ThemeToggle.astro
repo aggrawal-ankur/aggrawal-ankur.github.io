@@ -37,8 +37,9 @@
 <style is:global>
   .palette-menu-wrap {
     position: relative;
-    display: flex;
+    display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
   }
 
   .palette-icon-btn {
@@ -243,6 +244,10 @@
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
+      const fontTray = document.getElementById("font-tray");
+      const fontBtn = document.getElementById("font-toggle-btn");
+      if (fontTray) fontTray.setAttribute("data-open", "false");
+      if (fontBtn) fontBtn.setAttribute("aria-expanded", "false");
       toggleTray();
     });
 

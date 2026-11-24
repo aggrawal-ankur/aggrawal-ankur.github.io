@@ -5,6 +5,17 @@
       const valid = ["eink", "glacier", "sage", "twilight", "steel", "light"];
       const s = localStorage.getItem("theme") || localStorage.getItem("reading_palette");
       document.documentElement.dataset.theme = s && valid.includes(s) ? s : "eink";
+
+      const f = localStorage.getItem("reading_font");
+      const fontFamilies = {
+        inter: '"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        atkinson: '"Atkinson Hyperlegible", -apple-system, BlinkMacSystemFont, sans-serif',
+      };
+      const activeFont = fontFamilies[f] || fontFamilies.inter;
+      document.documentElement.style.setProperty("--font-sans", activeFont);
+      document.documentElement.style.setProperty("--font-heading", activeFont);
+      document.documentElement.style.setProperty("--font-serif", activeFont);
+      document.documentElement.dataset.font = f === "atkinson" ? "atkinson" : "inter";
     } catch {}
   })();
 
