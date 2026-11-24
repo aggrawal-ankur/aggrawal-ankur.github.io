@@ -1118,29 +1118,28 @@ It's time to explore devices. Yeah, it's been a long time, but I can't help. I a
 
 If you remember the types of files, some of them have the term "device" in them, like "a block device file". This is confusing to me. Is it a "device", a "file", or both, or something else entirely?
 
-We have understood the VFS as a contract, and if a thing could be modeled into that contract, it could be exposed as a file in the userspace.
+We have understood the VFS as a contract, and if a thing could be modeled into that contract, it could be exposed as a file in the userspace. "***Can a device be exposed as a file?***" Well, if that's what we want to do, who is stopping us from doing that?
 
-Can a device be exposed as a file? Well, who is stopping us from doing that, if we wish to do it? The question is, "***why do we need to do so?***" We already know the answer. Let's take an NVMe SSD, for example.
+It is exactly what has been done by the kernel. Devices are indeed modeled into the VFS layer. Therefore, the question is, "***why do we need to do so?***" Let's take the example of an NVMe SSD.
 
-  - We have a PCIe slot for it on the motherboard.
-  - The SSD has to be discovered, first of all, so some software is required for that.
-  - There will be some state associated with it, so an in-memory (software) representation of the SSD device is necessary.
-  - Then we have to locate the software that knows how to communicate with an NVMe SSD.
-  - After the software is found, we have to link it with the in-memory representation of the device so that the functions could be accessed properly.
+  - We have a PCIe slot on the motherboard. The NVMe SSD is present there.
+  - The SSD needs to be discovered, so a driver is required for that.
+  - There will be some state associated with the SSD, so we need an in-memory (software) representation of the SSD.
+  - We need the driver that knows how to communicate with an NVMe SSD.
+  - The driver may or may not be in the memory already. If it is not already, it has to be loaded dynamically, so we need a mechanism for that.
+  - After the driver is located, we have to link it with the in-memory representation of the device so that the driver code could be accessed.
 
-We need software to discover devices. Different devices are attached differently on the motherboard, so different software is required to discover, identify and manage them.
+A modern computer has a lot of devices, both soldered and as peripheral. Now replicate this setup for all the devices that could be possibly connected to a computer.
+  - Different devices are connected with the motherboard differently, so different drivers are required to discover and manage them.
+  - A device like an SSD could be accessed by multiple entities simultaneously, and without proper management (concurrency control), they would corrupt each other's data.
 
-Some devices are customizable. For example, we have keyboards with customizable features, where you can change the lighting, assign macros to keys, change the key press latency, etc. The general protocol might not cover these details, so specialized software written by the manufacturer is required to use those features.
+These are some of the things that need to be done, but they already read like a long list. Plus, these are all high-level ideas, so we don't know how complicated it is to implement them.
 
-A device like an SSD could be accessed by multiple entities simultaneously, and without coordination, they would corrupt each other's data.
+Clearly, it is all critical work, so naturally it is the kernel that does it. That means, the code that touches these devices is in the kernel space. But that code has no value if the userspace can't access it, as it is the userspace that uses these devices to do something.
 
-These are some of the things that need to be done, but they are already a lot of things to do. Plus, they are all high-level words, so we don't know what it takes to implement them.
+Therefore, we need a layer that exposes these critical kernel functionalities to the userspace in a controlled manner. And what is that layer? ***The VFS***.
 
-This is all critical work, so it is the kernel that does it. Therefore, the software that touches these devices is in the kernel space. However, it is the userspace that uses these devices to do something. So how is the userspace supposed to access these features?
-
-A layer that exposes these critical kernel functionalities (managing a device) to the userspace in a controlled manner is required. And what is that layer? ***The VFS***.
-  - All we have to do is to create an inode for the device in the relevant filesystem, link the two, and open an instance of the inode.
-  - We get immediate access to the device in userspace.
+All we have to do is to create an inode, link it with the device and open an instance of that inode (struct file). We get immediate access to the device in userspace.
 
 This answers why there are "block device file", or "character device file". These are devices that are exposed as files in the userspace.
 
@@ -1148,60 +1147,58 @@ This answers why there are "block device file", or "character device file". Thes
 
 It is noticeable that managing a device is a complicated process. Therefore, the kernel has a dedicated subsystem for it, called "***The Device Model***".
 
-It is obvious to think that we have to explore this "device model" to understand "devices". While it is right, there is a catch.
+It is obvious to think that we have to explore the "device model" to understand "devices". It is right, but there is a catch. Let's see what that is.
+
+# What is a device?
 
 Normally a "device" is associated with physical hardware, something that can be touched, like a mouse, or a keyboard. However, the concept of "device" is much broader, just like files are more than bytes on a disk.
 
-I understand devices as an in-memory representation of a ***resource***. The resource could be '***physical***', '***silicon***', or '***virtual***'.
+I understand devices as an in-memory representation of a "***resource***". The resource could be '***physical***', '***silicon***', or '***virtual***'.
 
-  1. There are devices which are backed by a piece of hardware, plugged externally into a slot, or soldered directly on the motherboard. For example, an NVMe SSD, or a keyboard-mouse pair.
+  1. There are devices which are backed by a real hardware, plugged into an external slot, or soldered directly on the motherboard. For example, an NVMe SSD, or a keyboard-mouse pair.
 
-  2. There are devices which are backed by a CPU silicon capability (hardware circuits and microcode built directly into the CPU processor die). For example, the virtualization capability in x86 processors.
+  2. There are devices which are backed by a CPU silicon capability (hardware circuits and microcode built directly into the processor die). For example, the virtualization capability in x86 processors.
 
-  3. There are devices which are backed by a software construct implemented by the kernel. There is no hardware backing them in any form. For example, `/dev/null`, or `/dev/zero`.
+  3. There are devices which are backed purely by a software abstraction running entirely in the kernel space (either built into the core kernel binary, or loaded as a kernel module), with no hardware in any form. For example, `/dev/null`, or `/dev/zero`.
 
 
-I have started exploring the device model from physical devices, in hope that I will steadily build a rough understanding of the entire device model, enough for me to understand `/dev/kvm`. However, I was wrong.
+I have started exploring the device model from physical devices, in hope that I will steadily build enough (not complete, obviously, it is HUGE) understanding of the device model to understand `/dev/kvm`. But I was wrong.
 
 Physical devices are complicated, very complicated, for reasons which weren't obvious until I explored them. The management of physical devices is a deep trench. Unless understanding them is the primary motivation, I don't think I can recommend exploring this part of the device model.
-> *This is my experience, yours could be different.*
+> "*This is my experience, yours could be different.*"
 
-The management layer for a silicon capability device and a pseudo device is far more manageable, and this is what concerns us. Therefore, we will explore only this part of the device model.
+The management layer for a silicon capability device and a pseudo device is far more manageable, and virtualization is a capability of the processor, so that's the part that is relevant to us. Therefore, we will explore only this part of the device model (in the required detailing).
 
----
+## The Software Representation of a Device
 
-The software representation of a device is divided into three primary structures, each with a specific purpose.
+The software representation of a device is divided into three levels.
 
-There are certain characteristics which are common to majority of the devices, regardless of their type specification. These characteristics are represented using `struct device`.
+There are certain characteristics which are common to majority of the devices.  These characteristics are represented using `struct device`.
+> "*Virtual (or pseudo) devices are a little different.*"
 
-There are features which are specific to a particular device. These features are represented by another structure and `struct device` is composited into it.
+There are features which are specific to a particular device (or a class of devices). These features are represented by a separate structure and `struct device` is composited into it.
 
-There are a wide variety of devices, and not all of them are required to be exported to userspace. When a device is to be exported to userspace, it needs another structure that helps in associating the VFS infrastructure with the device's functionalities.
+There are a wide variety of devices, and not all of them are required to be exposed to the userspace. When a device is to be exposed to the userspace, it needs another structure that helps in associating the VFS infrastructure with the device.
 
-Let's discuss these in enough detail.
+Let's discuss these.
 
-# The in-memory representation of a device
+## The Core Attributes
 
-## The core features
+The core attributes of a device are represented by `struct device`. It is defined in [*root/include/linux/device.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device.h?h=v7.2.12#n702).
 
-The core characteristics of a device is represented by `struct device`. It is defined in [*root/include/linux/device.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/device.h?h=v7.2.12#n702).
-
-Note: Only 9/46 members are relevant here.
+Note: Only 7/46 members are relevant here.
 
 ```c
 struct device {
   struct device *parent;
 
   const struct device_type *type;
-  const struct bus_type	*bus;
+  const struct bus_type    *bus;
 
 	struct device_driver *driver;
   void *driver_data;
 
-  dev_t	 devt;
-  u32    id;
-
-  const struct class *class;
+  dev_t  devt;
 
   void (*release)(struct device *dev);
 };
@@ -1216,9 +1213,7 @@ Below is a description of these fields.
 | `bus`    | The bus the device lives on (e.g. `pci_bus_type`). |
 | `driver` | Pointer to the driver bound to this device; `NULL` if unattached. |
 | `driver_data` | Pointer to the private scratchpad for the driver bounded to this device. |
-| `devt`  | The Major and Minor numbers. |
-| `id`    | Instance number used for naming when multiple identical devices exist (e.g. `loop0`, `loop1`). |
-| `class` | High-level role/subsystem of the device (e.g. `misc_class`), grouping it in `/sys/class/`. |
+| `devt`  | The device number (Major and Minor numbers). |
 | `(*release)` | Destructor callback executed when the device's reference count drops to zero to free memory. |
 
 ## The Specifics
