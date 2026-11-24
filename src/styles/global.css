@@ -2,7 +2,9 @@
 @import "@fontsource-variable/newsreader/wght.css";
 @import "@fontsource-variable/newsreader/wght-italic.css";
 @import "@fontsource-variable/inter/wght.css";
+@import "@fontsource-variable/inter/wght-italic.css";
 @import "@fontsource-variable/jetbrains-mono/wght.css";
+@import "@fontsource-variable/jetbrains-mono/wght-italic.css";
 @import "katex/dist/katex.min.css";
 @import "tailwindcss";
 
@@ -34,53 +36,245 @@
 	}
 
 	:root,
+	:root[data-theme="dark"],
+	:root[data-theme="eink"] {
+		color-scheme: dark;
+		/* 1. Ash (Neutral Dark) — Default */
+		--theme-bg: 0deg 0% 7.5%;             /* #131313 */
+		--theme-text: 0deg 0% 83%;            /* #d4d4d4 */
+		--theme-text-muted: 0deg 0% 53%;      /* #888888 */
+		--theme-accent: 218deg 11% 65%;       /* #9ca3af */
+		--theme-accent-2: 0deg 0% 96%;        /* #f4f4f5 */
+		--theme-link: 217deg 91% 68%;         /* #60a5fa */
+		--theme-quote: 218deg 11% 65%;        /* #9ca3af */
+
+		--paper: #1c1c1c;
+		--hairline: #2b2b2b;
+		--faint: #4a4a4a;
+		--accent-soft: rgba(156, 163, 175, 0.12);
+		--accent-soft-strong: rgba(156, 163, 175, 0.22);
+
+		--heading-color: #f4f4f5;
+		--code-inline-text: #e5c07b;
+		--code-inline-bg: rgba(229, 192, 123, 0.08);
+		--code-inline-border: rgba(229, 192, 123, 0.20);
+		--link-text: #60a5fa;
+		--link-hover: #93c5fd;
+		--link-underline: rgba(96, 165, 250, 0.4);
+		--quote-border: #9ca3af;
+		--quote-bg: rgba(255, 255, 255, 0.03);
+		--quote-text: #d4d4d4;
+		--tag-color: #cbd5e1;
+		--tag-bg: rgba(255, 255, 255, 0.06);
+		--status-flag: #d97706;
+		--selection-bg: rgba(156, 163, 175, 0.3);
+		--accent-glow: rgba(156, 163, 175, 0.45);
+
+		--aside-note: 212deg 28% 68%;
+		--aside-tip: 96deg 30% 62%;
+		--aside-important: 284deg 34% 74%;
+		--aside-caution: 42deg 72% 62%;
+		--aside-warning: 9deg 68% 66%;
+	}
+
+	:root[data-theme="glacier"] {
+		color-scheme: dark;
+		/* 2. Glacier (Arctic Teal) */
+		--theme-bg: 200deg 26% 7%;            /* #0d1316 */
+		--theme-text: 190deg 33% 85%;         /* #cde2e6 */
+		--theme-text-muted: 191deg 15% 56%;   /* #7f9ba1 */
+		--theme-accent: 186deg 47% 52%;       /* #4db3be */
+		--theme-accent-2: 192deg 50% 94%;     /* #e8f5f8 */
+		--theme-link: 199deg 95% 61%;         /* #38bdf8 */
+		--theme-quote: 186deg 47% 52%;        /* #4db3be */
+
+		--paper: #141c20;
+		--hairline: #1f2a30;
+		--faint: #3a4d57;
+		--accent-soft: rgba(77, 179, 190, 0.12);
+		--accent-soft-strong: rgba(77, 179, 190, 0.22);
+
+		--heading-color: #e8f5f8;
+		--code-inline-text: #5eead4;
+		--code-inline-bg: rgba(94, 234, 212, 0.08);
+		--code-inline-border: rgba(94, 234, 212, 0.20);
+		--link-text: #38bdf8;
+		--link-hover: #7dd3fc;
+		--link-underline: rgba(56, 189, 248, 0.4);
+		--quote-border: #4db3be;
+		--quote-bg: rgba(77, 179, 190, 0.06);
+		--quote-text: #cde2e6;
+		--tag-color: #67e8f9;
+		--tag-bg: rgba(77, 179, 190, 0.10);
+		--status-flag: #f87171;
+		--selection-bg: rgba(77, 179, 190, 0.3);
+		--accent-glow: rgba(77, 179, 190, 0.45);
+
+		--aside-note: 200deg 35% 68%;
+		--aside-tip: 160deg 35% 62%;
+		--aside-important: 284deg 34% 74%;
+		--aside-caution: 42deg 72% 62%;
+		--aside-warning: 9deg 68% 66%;
+	}
+
+	:root[data-theme="sage"] {
+		color-scheme: dark;
+		/* 3. Sage (Herbal Forest) */
+		--theme-bg: 140deg 16% 7%;            /* #101612 */
+		--theme-text: 95deg 22% 83%;          /* #d2ddca */
+		--theme-text-muted: 104deg 10% 55%;   /* #889882 */
+		--theme-accent: 121deg 30% 61%;       /* #7fba80 */
+		--theme-accent-2: 108deg 33% 94%;     /* #edf5eb */
+		--theme-link: 142deg 77% 73%;         /* #86efac */
+		--theme-quote: 121deg 30% 61%;        /* #7fba80 */
+
+		--paper: #18201a;
+		--hairline: #243027;
+		--faint: #415446;
+		--accent-soft: rgba(127, 186, 128, 0.12);
+		--accent-soft-strong: rgba(127, 186, 128, 0.22);
+
+		--heading-color: #edf5eb;
+		--code-inline-text: #f6c177;
+		--code-inline-bg: rgba(246, 193, 119, 0.08);
+		--code-inline-border: rgba(246, 193, 119, 0.20);
+		--link-text: #86efac;
+		--link-hover: #bbf7d0;
+		--link-underline: rgba(134, 239, 172, 0.4);
+		--quote-border: #7fba80;
+		--quote-bg: rgba(127, 186, 128, 0.06);
+		--quote-text: #d2ddca;
+		--tag-color: #a7f3d0;
+		--tag-bg: rgba(127, 186, 128, 0.10);
+		--status-flag: #eab308;
+		--selection-bg: rgba(127, 186, 128, 0.3);
+		--accent-glow: rgba(127, 186, 128, 0.45);
+
+		--aside-note: 200deg 28% 68%;
+		--aside-tip: 121deg 30% 61%;
+		--aside-important: 284deg 34% 74%;
+		--aside-caution: 42deg 72% 62%;
+		--aside-warning: 9deg 68% 66%;
+	}
+
+	:root[data-theme="twilight"] {
+		color-scheme: dark;
+		/* 4. Twilight (Wisteria) */
+		--theme-bg: 248deg 18% 9%;            /* #13121a */
+		--theme-text: 257deg 31% 89%;         /* #ded9eb */
+		--theme-text-muted: 254deg 12% 59%;   /* #908aa3 */
+		--theme-accent: 255deg 92% 76%;       /* #a78bfa */
+		--theme-accent-2: 264deg 43% 96%;     /* #f4f0fa */
+		--theme-link: 271deg 91% 75%;         /* #c084fc */
+		--theme-quote: 255deg 92% 76%;        /* #a78bfa */
+
+		--paper: #1c1a26;
+		--hairline: #29253b;
+		--faint: #494266;
+		--accent-soft: rgba(167, 139, 250, 0.12);
+		--accent-soft-strong: rgba(167, 139, 250, 0.22);
+
+		--heading-color: #f4f0fa;
+		--code-inline-text: #6ee7b7;
+		--code-inline-bg: rgba(110, 231, 183, 0.08);
+		--code-inline-border: rgba(110, 231, 183, 0.20);
+		--link-text: #c084fc;
+		--link-hover: #e9d5ff;
+		--link-underline: rgba(192, 132, 252, 0.4);
+		--quote-border: #a78bfa;
+		--quote-bg: rgba(167, 139, 250, 0.06);
+		--quote-text: #ded9eb;
+		--tag-color: #d8b4fe;
+		--tag-bg: rgba(167, 139, 250, 0.10);
+		--status-flag: #fb7185;
+		--selection-bg: rgba(167, 139, 250, 0.3);
+		--accent-glow: rgba(167, 139, 250, 0.45);
+
+		--aside-note: 212deg 28% 68%;
+		--aside-tip: 150deg 30% 62%;
+		--aside-important: 255deg 92% 76%;
+		--aside-caution: 42deg 72% 62%;
+		--aside-warning: 9deg 68% 66%;
+	}
+
+	:root[data-theme="steel"] {
+		color-scheme: dark;
+		/* 5. Steel (Blueprint Navy) */
+		--theme-bg: 218deg 19% 8%;            /* #111419 */
+		--theme-text: 216deg 22% 87%;         /* #d6dce5 */
+		--theme-text-muted: 216deg 11% 54%;   /* #7e8897 */
+		--theme-accent: 206deg 36% 62%;       /* #7aa2c0 */
+		--theme-accent-2: 214deg 32% 95%;     /* #edf2f7 */
+		--theme-link: 217deg 91% 68%;         /* #60a5fa */
+		--theme-quote: 206deg 36% 62%;        /* #7aa2c0 */
+
+		--paper: #191e25;
+		--hairline: #242c38;
+		--faint: #445063;
+		--accent-soft: rgba(122, 162, 192, 0.12);
+		--accent-soft-strong: rgba(122, 162, 192, 0.22);
+
+		--heading-color: #edf2f7;
+		--code-inline-text: #7dd3fc;
+		--code-inline-bg: rgba(125, 211, 252, 0.08);
+		--code-inline-border: rgba(125, 211, 252, 0.20);
+		--link-text: #60a5fa;
+		--link-hover: #93c5fd;
+		--link-underline: rgba(96, 165, 250, 0.4);
+		--quote-border: #7aa2c0;
+		--quote-bg: rgba(122, 162, 192, 0.06);
+		--quote-text: #d6dce5;
+		--tag-color: #93c5fd;
+		--tag-bg: rgba(122, 162, 192, 0.10);
+		--status-flag: #fb923c;
+		--selection-bg: rgba(122, 162, 192, 0.3);
+		--accent-glow: rgba(122, 162, 192, 0.45);
+
+		--aside-note: 206deg 36% 62%;
+		--aside-tip: 96deg 30% 62%;
+		--aside-important: 284deg 34% 74%;
+		--aside-caution: 42deg 72% 62%;
+		--aside-warning: 9deg 68% 66%;
+	}
+
 	:root[data-theme="light"] {
 		color-scheme: light;
-		/* hsl-channel format — see tailwind.config.ts color mapping */
+		/* Warm light fallback */
 		--theme-bg: 37deg 47% 93%;            /* #f6f1e6 */
 		--theme-text: 28deg 16% 13%;          /* #25201b */
 		--theme-text-muted: 25deg 14% 26%;    /* #4a4239 */
 		--theme-accent: 17deg 60% 34%;        /* #8a4423 */
-		--theme-accent-2: 28deg 16% 13%;      /* same as ink */
-		--theme-link: 17deg 60% 34%;          /* same as accent */
-		--theme-quote: 17deg 60% 34%;         /* same as accent */
+		--theme-accent-2: 28deg 16% 13%;      /* #25201b */
+		--theme-link: 17deg 60% 34%;          /* #8a4423 */
+		--theme-quote: 17deg 60% 34%;         /* #8a4423 */
 
-		/* Concrete-color palette tokens (see file header for rationale) */
 		--paper: #fbf6ec;
 		--hairline: #d9cfb9;
 		--faint: #b8ad9b;
 		--accent-soft: rgba(138, 68, 35, 0.1);
 		--accent-soft-strong: rgba(138, 68, 35, 0.18);
 
-		/* Callout accents — hues spread for distinguishability, kept muted for the theme */
-		--aside-note: 212deg 20% 46%;       /* dusty blue */
-		--aside-tip: 96deg 32% 33%;         /* green */
-		--aside-important: 284deg 26% 48%;  /* plum */
-		--aside-caution: 40deg 78% 40%;     /* amber */
-		--aside-warning: 7deg 66% 45%;      /* red */
-	}
+		--heading-color: #25201b;
+		--code-inline-text: #8a4423;
+		--code-inline-bg: rgba(138, 68, 35, 0.08);
+		--code-inline-border: rgba(138, 68, 35, 0.20);
+		--link-text: #8a4423;
+		--link-hover: #aa542b;
+		--link-underline: rgba(138, 68, 35, 0.4);
+		--quote-border: #8a4423;
+		--quote-bg: rgba(138, 68, 35, 0.05);
+		--quote-text: #25201b;
+		--tag-color: #8a4423;
+		--tag-bg: rgba(138, 68, 35, 0.08);
+		--status-flag: #d97706;
+		--selection-bg: rgba(138, 68, 35, 0.2);
+		--accent-glow: rgba(138, 68, 35, 0.45);
 
-	:root[data-theme="dark"] {
-		color-scheme: dark;
-		--theme-bg: 20deg 9% 7%;              /* #131110 */
-		--theme-text: 42deg 35% 92%;          /* #f4f0e3 */
-		--theme-text-muted: 36deg 18% 73%;    /* #c8c1ae */
-		--theme-accent: 30deg 49% 59%;        /* #c89761 */
-		--theme-accent-2: 42deg 35% 92%;      /* same as ink */
-		--theme-link: 30deg 49% 59%;          /* same as accent */
-		--theme-quote: 30deg 49% 59%;         /* same as accent */
-
-		--paper: #1a1715;
-		--hairline: #2a2622;
-		--faint: #4f4a42;
-		--accent-soft: rgba(200, 151, 97, 0.12);
-		--accent-soft-strong: rgba(200, 151, 97, 0.22);
-
-		--aside-note: 212deg 28% 68%;       /* dusty blue */
-		--aside-tip: 96deg 30% 62%;         /* green */
-		--aside-important: 284deg 34% 74%;  /* plum */
-		--aside-caution: 42deg 72% 62%;     /* amber */
-		--aside-warning: 9deg 68% 66%;      /* red */
+		--aside-note: 212deg 20% 46%;
+		--aside-tip: 96deg 32% 33%;
+		--aside-important: 284deg 26% 48%;
+		--aside-caution: 40deg 78% 40%;
+		--aside-warning: 7deg 66% 45%;
 	}
 }
 
@@ -509,6 +703,54 @@ blockquote li:last-child > :last-child {
 		padding-left: 16px;
 		font-size: 16.5px;
 	}
+}
+
+/* Markdown Tables — book-style, responsive, horizontal hairlines */
+table {
+	display: block;
+	width: var(--reading-width);
+	max-width: 100%;
+	overflow-x: auto;
+	border-collapse: collapse;
+	margin: 28px 0;
+	font-size: 15.5px;
+	font-family: var(--font-sans);
+}
+th,
+td {
+	text-align: left;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--hairline);
+}
+th {
+	font-weight: 500;
+	color: hsl(var(--theme-text));
+}
+td {
+	color: hsl(var(--theme-text-muted));
+}
+tr:hover td {
+	background: rgba(255, 255, 255, 0.02);
+}
+
+/* Ordered list markers */
+ol li::marker {
+	color: hsl(var(--theme-accent));
+	font-weight: 600;
+}
+
+/* Inline code across all pages */
+:not(pre) > code {
+	font-family: var(--font-mono);
+	font-size: 14px;
+	background: var(--code-inline-bg, var(--paper));
+	border: 1px solid var(--code-inline-border, var(--hairline));
+	padding: 1.5px 6px;
+	border-radius: 4px;
+	color: var(--code-inline-text, hsl(var(--theme-text-muted)));
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+	transition: background-color 0.35s ease, border-color 0.35s ease;
 }
 
 /* Stagger entry: items set --i inline; nth-child rules cover the rest. */

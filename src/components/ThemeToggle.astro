@@ -1,61 +1,274 @@
-<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
-	<span class="icon" aria-hidden="true"></span>
-	<span class="label"></span>
-</button>
+<div class="palette-menu-wrap">
+  <button
+    type="button"
+    id="palette-toggle-btn"
+    class="palette-icon-btn"
+    aria-label="Reading palette"
+    aria-expanded="false"
+    title="Switch reading palette"
+  >
+    <svg class="palette-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13 0-.92.74-1.67 1.67-1.67h1.99c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/>
+      <circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="10.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="17.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+  <div id="palette-tray" class="palette-tray" data-open="false">
+    <button type="button" class="palette-circle dot-eink" data-theme="eink" aria-label="Ash">
+      <span class="circle-tooltip">Ash</span>
+    </button>
+    <button type="button" class="palette-circle dot-glacier" data-theme="glacier" aria-label="Glacier">
+      <span class="circle-tooltip">Glacier</span>
+    </button>
+    <button type="button" class="palette-circle dot-sage" data-theme="sage" aria-label="Sage">
+      <span class="circle-tooltip">Sage</span>
+    </button>
+    <button type="button" class="palette-circle dot-twilight" data-theme="twilight" aria-label="Twilight">
+      <span class="circle-tooltip">Twilight</span>
+    </button>
+    <button type="button" class="palette-circle dot-steel" data-theme="steel" aria-label="Steel">
+      <span class="circle-tooltip">Steel</span>
+    </button>
+  </div>
+</div>
 
 <style is:global>
-	.theme-toggle {
-		display: inline-block;
-		padding: 6px 12px;
-		border-radius: 999px;
-		background: var(--accent-soft);
-		color: hsl(var(--theme-text-muted));
-		border: 1px solid transparent;
-		font-family: var(--font-sans);
-		font-size: 12px;
-		font-weight: 500;
-		line-height: 1.4;
-		cursor: pointer;
-		transition: background 0.2s ease, color 0.2s ease;
-	}
-	.theme-toggle:hover {
-		background: var(--accent-soft-strong);
-		color: hsl(var(--theme-accent));
-	}
-	.theme-toggle:focus-visible {
-		outline: 2px solid hsl(var(--theme-accent));
-		outline-offset: 3px;
-	}
+  .palette-menu-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
 
-	.theme-toggle .icon {
-		display: inline-block;
-		width: 1em;
-		font-size: 13px;
-		margin-right: 6px;
-		text-align: center;
-		transform: translateY(-1px);
-	}
-	.theme-toggle .icon::before { content: "☾"; }
-	[data-theme="dark"] .theme-toggle .icon::before { content: "☀"; }
+  .palette-icon-btn {
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    color: hsl(var(--theme-text-muted));
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  }
 
-	.theme-toggle .label {
-		display: inline-block;
-		min-width: 2.6em;
-		text-align: left;
-	}
-	.theme-toggle .label::before { content: "Dark"; }
-	[data-theme="dark"] .theme-toggle .label::before { content: "Light"; }
+  .palette-icon-btn:hover,
+  .palette-icon-btn[aria-expanded="true"] {
+    color: hsl(var(--theme-accent));
+    border-color: hsl(var(--theme-accent));
+  }
+
+  .palette-icon-btn:focus-visible {
+    outline: 2px solid hsl(var(--theme-accent));
+    outline-offset: 3px;
+  }
+
+  .palette-icon {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.22s ease;
+  }
+
+  .palette-icon-btn[aria-expanded="true"] .palette-icon {
+    transform: rotate(25deg);
+  }
+
+  .palette-tray {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-6px) scale(0.94);
+    transform-origin: top right;
+    transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                visibility 0.2s;
+  }
+
+  .palette-tray[data-open="true"] {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+  }
+
+  .palette-circle {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 0.2s ease,
+                border-color 0.2s ease;
+  }
+
+  .palette-circle:hover {
+    transform: translateY(-2px) scale(1.3);
+  }
+
+  .palette-circle:active {
+    transform: translateY(0) scale(1.05);
+  }
+
+  .palette-circle[aria-selected="true"] {
+    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px hsl(var(--theme-accent));
+  }
+
+  /* Specific palette dot swatches — filled with accent hues */
+  .dot-eink {
+    background-color: #888888;
+  }
+  .dot-eink:hover {
+    box-shadow: 0 0 10px rgba(156, 163, 175, 0.7);
+  }
+
+  .dot-glacier {
+    background-color: #4db3be;
+  }
+  .dot-glacier:hover {
+    box-shadow: 0 0 10px rgba(77, 179, 190, 0.7);
+  }
+
+  .dot-sage {
+    background-color: #7fba80;
+  }
+  .dot-sage:hover {
+    box-shadow: 0 0 10px rgba(127, 186, 128, 0.7);
+  }
+
+  .dot-twilight {
+    background-color: #a78bfa;
+  }
+  .dot-twilight:hover {
+    box-shadow: 0 0 10px rgba(167, 139, 250, 0.7);
+  }
+
+  .dot-steel {
+    background-color: #7aa2c0;
+  }
+  .dot-steel:hover {
+    box-shadow: 0 0 10px rgba(122, 162, 192, 0.7);
+  }
+
+  /* Tooltips */
+  .circle-tooltip {
+    position: absolute;
+    bottom: calc(100% + 9px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px) scale(0.85);
+    background: var(--paper);
+    color: hsl(var(--theme-text));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 2.5px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--hairline);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    z-index: 1020;
+  }
+
+  .circle-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 4px;
+    border-style: solid;
+    border-color: var(--hairline) transparent transparent transparent;
+  }
+
+  .palette-circle:hover .circle-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 </style>
 
 <script>
-	const r = document.documentElement;
-	const btn = document.getElementById("theme-toggle") as HTMLButtonElement | null;
-	if (btn) {
-		btn.addEventListener("click", () => {
-			const next = r.dataset.theme === "dark" ? "light" : "dark";
-			r.dataset.theme = next;
-			try { localStorage.setItem("theme", next); } catch {}
-			document.dispatchEvent(new CustomEvent("theme-change", { detail: { theme: next } }));
-		});
-	}
+  function initPaletteToggle() {
+    const btn = document.getElementById("palette-toggle-btn");
+    const tray = document.getElementById("palette-tray");
+    if (!btn || !tray) return;
+
+    function updateSelected(theme: string) {
+      document.querySelectorAll(".palette-circle").forEach((el) => {
+        el.setAttribute("aria-selected", el.getAttribute("data-theme") === theme ? "true" : "false");
+      });
+    }
+
+    const currentTheme = document.documentElement.dataset.theme || "eink";
+    updateSelected(currentTheme);
+
+    function toggleTray() {
+      const isOpen = tray?.getAttribute("data-open") === "true";
+      const next = !isOpen;
+      tray?.setAttribute("data-open", next ? "true" : "false");
+      btn?.setAttribute("aria-expanded", next ? "true" : "false");
+    }
+
+    function closeTray() {
+      tray?.setAttribute("data-open", "false");
+      btn?.setAttribute("aria-expanded", "false");
+    }
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleTray();
+    });
+
+    document.querySelectorAll(".palette-circle").forEach((circle) => {
+      circle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const theme = circle.getAttribute("data-theme");
+        if (theme) {
+          document.dispatchEvent(new CustomEvent("theme-change", { detail: { theme } }));
+          updateSelected(theme);
+        }
+        closeTray();
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!tray.contains(e.target as Node) && !btn.contains(e.target as Node)) {
+        closeTray();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeTray();
+    });
+  }
+
+  initPaletteToggle();
+  document.addEventListener("astro:after-swap", initPaletteToggle);
 </script>
