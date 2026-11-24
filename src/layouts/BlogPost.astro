@@ -109,6 +109,7 @@ const giscusThemes = import.meta.env.PROD
 
 				{!!tags?.length && (
 					<div class="post-tags">
+						<span class="post-eyebrow">Tags <span class="sep">·</span></span>
 						{tags.map((tag, i) => (
 							<Fragment key={tag}>
 								<a class="tag-link" data-pagefind-filter="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>#{tag}</a>
@@ -316,14 +317,28 @@ const giscusThemes = import.meta.env.PROD
 	.post-tags {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
+		align-items: baseline;
 		gap: 6px;
+		margin: 0 0 20px;
+	}
+	.post-tags .post-eyebrow {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text) / 0.55);
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum";
+	}
+	.post-tags .post-eyebrow .sep {
+		color: var(--faint);
+		margin: 0 4px;
+	}
+	.post-tags .tag-link {
 		font-family: var(--font-mono);
 		font-size: 11px;
 		letter-spacing: 0.05em;
-		margin: 0 0 20px;
-	}
-	.post-tags .tag-link {
 		color: hsl(var(--theme-text) / 0.58);
 		text-decoration: none;
 		transition: color 0.18s ease;
@@ -336,7 +351,7 @@ const giscusThemes = import.meta.env.PROD
 		outline-offset: 2px;
 		border-radius: 2px;
 	}
-	.post-tags .sep {
+	.post-tags > .sep {
 		color: var(--faint);
 		margin: 0 2px;
 	}
@@ -492,7 +507,8 @@ const giscusThemes = import.meta.env.PROD
 		color: hsl(var(--theme-text));
 	}
 
-	.post-article > p {
+	.post-article > p,
+	.post-article .heading-content-inner > p {
 		font-size: 17.5px;
 		line-height: 1.75;
 		word-spacing: 0.04em;
@@ -769,34 +785,89 @@ const giscusThemes = import.meta.env.PROD
 		position: relative;
 		scroll-margin-top: 2rem;
 	}
-	.post-article .heading-anchor {
+
+	/* Clickable headings for permalink copy */
+	.post-article .heading-clickable {
+		cursor: pointer;
+		user-select: text;
+		transition: color 0.18s ease;
+	}
+	.post-article .heading-clickable:hover {
+		color: hsl(var(--theme-accent));
+	}
+
+	/* Collapse toggle chevron button where '#' was */
+	.post-article .heading-collapse-btn {
 		position: absolute;
-		left: -1.25em;
-		top: 0;
-		bottom: 0;
+		left: -26px;
+		top: 50%;
+		transform: translateY(-50%);
 		display: inline-flex;
 		align-items: center;
-		font-family: var(--font-mono);
-		font-size: 0.7em;
-		color: hsl(var(--theme-accent));
-		opacity: 0.4;
-		transition: opacity 0.18s ease;
-		text-decoration: none;
-		padding: 0 0.4em 0.15em;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		color: hsl(var(--theme-text) / 0.45);
 		background: transparent;
 		border: 0;
 		cursor: pointer;
+		padding: 0;
+		opacity: 0.6;
+		transition: color 0.18s ease, opacity 0.18s ease;
 	}
-	@media (hover: hover) {
-		.post-article h1:hover .heading-anchor,
-		.post-article h2:hover .heading-anchor,
-		.post-article h3:hover .heading-anchor,
-		.post-article h4:hover .heading-anchor,
-		.post-article h5:hover .heading-anchor,
-		.post-article h6:hover .heading-anchor,
-		.post-article .heading-anchor:focus-visible {
-			opacity: 1;
-		}
+	.post-article .heading-collapse-btn:hover {
+		color: hsl(var(--theme-accent));
+		opacity: 1;
+	}
+	.post-article .heading-collapse-btn:focus-visible {
+		outline: 2px solid hsl(var(--theme-accent));
+		outline-offset: 2px;
+		border-radius: 3px;
+		opacity: 1;
+	}
+	.post-article .chevron-icon {
+		transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+		transform-origin: center;
+	}
+	.post-article .heading-collapse-btn[aria-expanded="false"] .chevron-icon {
+		transform: rotate(-90deg);
+	}
+
+	/* Silent copy feedback symbol */
+	.post-article .heading-copy-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: hsl(var(--theme-accent));
+		margin-left: 10px;
+		vertical-align: middle;
+		opacity: 0;
+		pointer-events: none;
+		transform: scale(0.8);
+		transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+	.post-article .heading-copy-pill[data-show="true"] {
+		opacity: 0.85;
+		transform: scale(1);
+	}
+
+	/* Collapsible content container with smooth grid transition */
+	.post-article .heading-content {
+		display: grid;
+		grid-template-rows: 1fr;
+		transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+		opacity: 1;
+	}
+	.post-article .heading-content > .heading-content-inner {
+		min-height: 0;
+	}
+	.post-article .heading-content[data-collapsed="true"] {
+		grid-template-rows: 0fr;
+		opacity: 0;
+		pointer-events: none;
+	}
+	.post-article .heading-content[data-collapsed="true"] > .heading-content-inner {
+		overflow: hidden;
 	}
 	.post-article figure img {
 		width: 100%;
@@ -829,7 +900,11 @@ const giscusThemes = import.meta.env.PROD
 	}
 
 	@media (max-width: 720px) {
+		.post-article .heading-collapse-btn {
+			left: -22px;
+		}
 		.post-article > p,
+		.post-article .heading-content-inner > p,
 		.post-article ul li,
 		.post-article ol li {
 			font-size: 17px;
@@ -842,7 +917,13 @@ const giscusThemes = import.meta.env.PROD
 		.post-article figure { margin: 28px 0; }
 	}
 	@media (max-width: 420px) {
+		.post-article .heading-collapse-btn {
+			left: -18px;
+			width: 16px;
+			height: 16px;
+		}
 		.post-article > p,
+		.post-article .heading-content-inner > p,
 		.post-article ul li,
 		.post-article ol li {
 			font-size: 16px;
@@ -944,35 +1025,180 @@ const giscusThemes = import.meta.env.PROD
 		lazyImgs.forEach((img) => io.observe(img));
 	}
 
-	const slugify = (s: string) =>
-		s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-	const usedIds = new Set<string>();
-	document
-		.querySelectorAll<HTMLHeadingElement>(
-			".post-article h1, .post-article h2, .post-article h3, .post-article h4, .post-article h5, .post-article h6",
-		)
-		.forEach((h) => {
-			const baseId = h.id || slugify(h.textContent ?? "");
-			if (!baseId) return;
-			let id = baseId;
-			for (let n = 2; usedIds.has(id); n++) id = `${baseId}-${n}`;
-			usedIds.add(id);
-			if (!h.id) h.id = id;
+  function initArticleHeadings() {
+    const article = document.querySelector<HTMLElement>(".post-article");
+    if (!article) return;
 
-			const btn = document.createElement("button");
-			btn.type = "button";
-			btn.className = "heading-anchor";
-			btn.setAttribute("aria-label", `Copy link to ${h.textContent ?? "section"}`);
-			btn.textContent = "#";
-			btn.addEventListener("click", async () => {
-				const url = `${location.origin}${location.pathname}#${id}`;
-				history.replaceState(null, "", `#${id}`);
-				try {
-					await navigator.clipboard.writeText(url);
-					btn.textContent = "✓";
-					setTimeout(() => (btn.textContent = "#"), 1200);
-				} catch {}
-			});
-			h.prepend(btn);
-		});
+    const slugify = (s: string) =>
+      s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const usedIds = new Set<string>();
+
+    // 1. Wrap sections for h3, then h2, then h1 (from innermost to outermost)
+    const levels = ["h3", "h2", "h1"];
+    levels.forEach((tag) => {
+      const headings = Array.from(article.querySelectorAll<HTMLHeadingElement>(tag));
+      headings.forEach((h) => {
+        const levelNum = parseInt(h.tagName[1], 10);
+
+        // Ensure unique ID for anchoring
+        const baseId = h.id || slugify(h.textContent ?? "");
+        if (baseId) {
+          let id = baseId;
+          for (let n = 2; usedIds.has(id); n++) id = `${baseId}-${n}`;
+          usedIds.add(id);
+          if (!h.id) h.id = id;
+        }
+
+        // Find sibling elements belonging to this section
+        const siblings: Element[] = [];
+        let next = h.nextElementSibling;
+        while (next) {
+          if (/^H[1-6]$/i.test(next.tagName)) {
+            const nextLevel = parseInt(next.tagName[1], 10);
+            if (nextLevel <= levelNum) break;
+          }
+          siblings.push(next);
+          next = next.nextElementSibling;
+        }
+
+        if (siblings.length === 0) return;
+
+        // Create collapsible wrapper
+        const wrapper = document.createElement("div");
+        wrapper.className = "heading-content";
+        wrapper.setAttribute("data-collapsed", "false");
+
+        const inner = document.createElement("div");
+        inner.className = "heading-content-inner";
+
+        siblings.forEach((el) => inner.appendChild(el));
+        wrapper.appendChild(inner);
+        h.insertAdjacentElement("afterend", wrapper);
+
+        // Create collapse chevron button (replacing the '#')
+        const collapseBtn = document.createElement("button");
+        collapseBtn.type = "button";
+        collapseBtn.className = "heading-collapse-btn";
+        collapseBtn.setAttribute("aria-label", `Toggle ${h.textContent ?? "section"}`);
+        collapseBtn.setAttribute("aria-expanded", "true");
+        collapseBtn.innerHTML = `
+          <svg class="chevron-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6l4 4 4-4"/>
+          </svg>
+        `;
+
+        collapseBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isCollapsed = wrapper.getAttribute("data-collapsed") === "true";
+          wrapper.setAttribute("data-collapsed", isCollapsed ? "false" : "true");
+          collapseBtn.setAttribute("aria-expanded", isCollapsed ? "true" : "false");
+        });
+
+        h.prepend(collapseBtn);
+      });
+    });
+
+    // 2. Make headings clickable to anchor & copy permalink
+    const allHeadings = article.querySelectorAll<HTMLHeadingElement>(
+      "h1, h2, h3, h4, h5, h6"
+    );
+    allHeadings.forEach((h) => {
+      if (!h.id) {
+        const baseId = slugify(h.textContent ?? "");
+        if (baseId) {
+          let id = baseId;
+          for (let n = 2; usedIds.has(id); n++) id = `${baseId}-${n}`;
+          usedIds.add(id);
+          h.id = id;
+        }
+      }
+
+      const id = h.id;
+      if (!id) return;
+
+      h.classList.add("heading-clickable");
+      h.setAttribute("title", "Click to copy link");
+
+      // Feedback symbol (silent copy indicator)
+      const pill = document.createElement("span");
+      pill.className = "heading-copy-pill";
+      pill.setAttribute("aria-hidden", "true");
+      pill.innerHTML = `
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+      `;
+      h.appendChild(pill);
+
+      let copyTimeout: number | undefined;
+      h.addEventListener("click", async (e) => {
+        // Don't trigger if clicked on the chevron button
+        if ((e.target as HTMLElement).closest(".heading-collapse-btn")) return;
+        // Don't trigger if user is selecting text
+        if (window.getSelection()?.toString()) return;
+
+        const url = `${location.origin}${location.pathname}#${id}`;
+        history.replaceState(null, "", `#${id}`);
+
+        // If this heading's section is collapsed, expand it
+        const ownWrapper = h.nextElementSibling;
+        if (ownWrapper && ownWrapper.classList.contains("heading-content")) {
+          if (ownWrapper.getAttribute("data-collapsed") === "true") {
+            ownWrapper.setAttribute("data-collapsed", "false");
+            const btn = h.querySelector<HTMLButtonElement>(".heading-collapse-btn");
+            if (btn) btn.setAttribute("aria-expanded", "true");
+          }
+        }
+
+        try {
+          await navigator.clipboard.writeText(url);
+          if (copyTimeout) clearTimeout(copyTimeout);
+          pill.setAttribute("data-show", "true");
+          copyTimeout = window.setTimeout(() => {
+            pill.removeAttribute("data-show");
+          }, 1400);
+        } catch {}
+      });
+    });
+
+    // 3. Auto-expand section if hash matches target or child
+    function expandTargetFromHash() {
+      const hash = window.location.hash.slice(1);
+      if (!hash) return;
+      const target = document.getElementById(hash);
+      if (!target) return;
+
+      // Expand target's own section if it's a heading with a collapsible wrapper
+      const ownWrapper = target.nextElementSibling;
+      if (ownWrapper && ownWrapper.classList.contains("heading-content")) {
+        ownWrapper.setAttribute("data-collapsed", "false");
+        const ownBtn = target.querySelector<HTMLButtonElement>(".heading-collapse-btn");
+        if (ownBtn) ownBtn.setAttribute("aria-expanded", "true");
+      }
+
+      // Expand all ancestor collapsible sections containing target
+      let parent = target.parentElement;
+      while (parent && parent !== article) {
+        if (parent.classList.contains("heading-content")) {
+          parent.setAttribute("data-collapsed", "false");
+          const prevHeading = parent.previousElementSibling;
+          const btn = prevHeading?.querySelector<HTMLButtonElement>(".heading-collapse-btn");
+          if (btn) btn.setAttribute("aria-expanded", "true");
+        }
+        parent = parent.parentElement;
+      }
+
+      // Ensure smooth scroll to target after DOM settles
+      setTimeout(() => {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
+
+    expandTargetFromHash();
+    window.addEventListener("hashchange", expandTargetFromHash);
+  }
+
+  initArticleHeadings();
+  document.addEventListener("astro:after-swap", initArticleHeadings);
 </script>
