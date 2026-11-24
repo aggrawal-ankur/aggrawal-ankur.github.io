@@ -68,31 +68,50 @@ export const menuLinks: { path: string; title: string }[] = [
 ];
 
 export const expressiveCodeOptions: AstroExpressiveCodeOptions = {
-	styleOverrides: {
-		borderRadius: "4px",
-		codeBackground: ({ theme }) => (theme.type === "light" ? "#f0e9d6" : "#1a1715"),
-		codeFontFamily:
-			'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;',
-		codeFontSize: "0.875rem",
-		codeLineHeight: "1.7142857rem",
-		codePaddingInline: "1rem",
-		frames: {
-			editorActiveTabBackground: ({ theme }) => (theme.type === "light" ? "#f0e9d6" : "#1a1715"),
-			editorTabBarBackground: ({ theme }) => (theme.type === "light" ? "#ebe3cd" : "#15120e"),
-			frameBoxShadowCssValue: "none",
-			terminalBackground: ({ theme }) => (theme.type === "light" ? "#f0e9d6" : "#1a1715"),
-			terminalTitlebarBackground: ({ theme }) => (theme.type === "light" ? "#ebe3cd" : "#15120e"),
-		},
-		uiLineHeight: "inherit",
-	},
-	themeCssSelector(theme, { styleVariants }) {
-		if (styleVariants.length >= 2) {
-			const baseTheme = styleVariants[0]?.theme;
-			const altTheme = styleVariants.find((v) => v.theme.type !== baseTheme?.type)?.theme;
-			if (theme === baseTheme || theme === altTheme) return `[data-theme='${theme.type}']`;
-		}
-		return `[data-theme="${theme.name}"]`;
-	},
-	themes: ["min-dark", "min-light"],
-	useThemedScrollbars: false,
+  styleOverrides: {
+    borderRadius: "6px",
+    borderWidth: "1px",
+    borderColor: "var(--hairline)",
+    codeBackground: "var(--paper)",
+    codeFontFamily:
+      '"JetBrains Mono", "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
+    codeFontSize: "0.85rem",
+    codeLineHeight: "1.65",
+    codePaddingInline: "1.1rem",
+    codePaddingBlock: "1rem",
+    uiFontFamily:
+      '"JetBrains Mono", "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
+    uiFontSize: "0.8rem",
+    uiLineHeight: "inherit",
+    frames: {
+      editorActiveTabBackground: "var(--paper)",
+      editorTabBarBackground: "var(--theme-bg)",
+      editorTabBarBorderColor: "var(--hairline)",
+      editorTabBarBorderBottomColor: "var(--hairline)",
+      editorActiveTabBorderColor: "var(--hairline)",
+      frameBoxShadowCssValue: "none",
+      terminalBackground: "var(--paper)",
+      terminalTitlebarBackground: "var(--theme-bg)",
+      terminalTitlebarBorderBottomColor: "var(--hairline)",
+      terminalTitlebarDotsOpacity: "0.4",
+    },
+  },
+  themeCssSelector(theme) {
+    if (theme.name === "github-dark-dimmed") return "[data-theme='eink'], [data-theme='dark'], :root:not([data-theme])";
+    if (theme.name === "material-theme-ocean") return "[data-theme='glacier']";
+    if (theme.name === "material-theme-darker") return "[data-theme='sage']";
+    if (theme.name === "dracula") return "[data-theme='twilight']";
+    if (theme.name === "material-theme-palenight") return "[data-theme='steel']";
+    if (theme.name === "github-light") return "[data-theme='light']";
+    return `[data-theme='${theme.name}']`;
+  },
+  themes: [
+    "github-dark-dimmed",
+    "material-theme-ocean",
+    "material-theme-darker",
+    "dracula",
+    "material-theme-palenight",
+    "github-light",
+  ],
+  useThemedScrollbars: false,
 };

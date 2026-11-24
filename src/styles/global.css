@@ -27,7 +27,7 @@
 	:root {
 		--font-serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
 		--font-sans: "Inter Variable", -apple-system, system-ui, sans-serif;
-		--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+		--font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
 
 		/* Layout tokens — shared across home, posts archive, and article pages */
 		--reading-width: 62ch;          /* article body & long prose blocks */
@@ -813,4 +813,114 @@ ol li::marker {
 		animation-iteration-count: 1 !important;
 		scroll-behavior: auto !important;
 	}
+}
+
+/* ==========================================================================
+   Expressive Code block enhancements & minimal copy button
+   ========================================================================== */
+
+.expressive-code {
+  --ec-tick-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  width: 100%;
+  max-width: 100%;
+  margin: 28px 0;
+}
+
+.expressive-code pre {
+  background: var(--paper) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: 6px !important;
+  transition: background-color 0.35s ease, border-color 0.35s ease;
+}
+
+.expressive-code .frame {
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  transition: background-color 0.35s ease, border-color 0.35s ease;
+}
+
+.expressive-code pre,
+.expressive-code code,
+.expressive-code .ec-line,
+.expressive-code .ec-line * {
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "zero";
+  letter-spacing: 0 !important;
+  font-variant-ligatures: none !important;
+  tab-size: 8;
+  -moz-tab-size: 8;
+}
+
+/* Minimal subtle copy button */
+.expressive-code .copy {
+  inset-block-start: 8px !important;
+  inset-inline-end: 8px !important;
+}
+
+.expressive-code .copy button {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.expressive-code .copy button div {
+  display: none !important;
+}
+
+.expressive-code .copy button::before {
+  display: none !important;
+}
+
+.expressive-code .copy button::after {
+  margin: 5px !important;
+  background-color: hsl(var(--theme-text) / 0.6) !important;
+  transition: background-color 0.18s ease, -webkit-mask-image 0.18s ease;
+}
+
+@media (hover: hover) {
+  .expressive-code .copy button {
+    opacity: 0 !important;
+  }
+  .expressive-code .frame:hover .copy button,
+  .expressive-code .copy button:focus-visible {
+    opacity: 0.6 !important;
+  }
+}
+
+.expressive-code .copy button:hover,
+.expressive-code .copy button:focus-visible {
+  opacity: 1 !important;
+  background: var(--accent-soft) !important;
+  border-color: var(--hairline) !important;
+}
+
+.expressive-code .copy button:hover::after,
+.expressive-code .copy button:focus-visible::after {
+  background-color: hsl(var(--theme-accent)) !important;
+}
+
+/* Remove "Copied!" text tooltip badge completely */
+.expressive-code .copy .feedback {
+  display: none !important;
+}
+
+/* Turn copy button into a tick when copied and restore */
+.expressive-code .copy:has(.feedback) button,
+.expressive-code .copy button[data-is-copied="true"] {
+  opacity: 1 !important;
+  background: var(--accent-soft) !important;
+  border-color: var(--hairline) !important;
+}
+
+.expressive-code .copy:has(.feedback) button::after,
+.expressive-code .copy button[data-is-copied="true"]::after {
+  -webkit-mask-image: var(--ec-tick-icon) !important;
+  mask-image: var(--ec-tick-icon) !important;
+  background-color: hsl(var(--theme-accent)) !important;
 }

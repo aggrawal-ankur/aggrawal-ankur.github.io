@@ -4,7 +4,7 @@ import { Image } from "astro:assets";
 
 import ShareButtons from "@/components/blog/ShareButtons.astro";
 import WebMentions from "@/components/blog/webmentions/index.astro";
-import { getAllPosts, getPostSortDate, sortMDByDate } from "@/data/post";
+import { getAllPosts, sortMDByDate } from "@/data/post";
 import { siteConfig } from "@/site-config";
 import { formatBylineDate, formatEyebrowDate } from "@/utils/date";
 import { absoluteUrl, withBase } from "@/utils/path";
@@ -609,7 +609,7 @@ const giscusThemes = import.meta.env.PROD
 	.post-article pre {
 		background: var(--paper);
 		border: 1px solid var(--hairline);
-		border-radius: 4px;
+		border-radius: 6px;
 		padding: 16px;
 		margin: 28px 0;
 		overflow-x: auto;
@@ -627,7 +627,7 @@ const giscusThemes = import.meta.env.PROD
 	}
 	/* expressive-code wrapper safety */
 	.post-article .expressive-code {
-		width: 614.833px;
+		width: 100%;
 		max-width: 100%;
 		margin: 28px 0;
 	}
@@ -1199,6 +1199,23 @@ const giscusThemes = import.meta.env.PROD
     window.addEventListener("hashchange", expandTargetFromHash);
   }
 
+  function initCodeCopyButtons() {
+    document.querySelectorAll<HTMLButtonElement>(".expressive-code .copy button").forEach((btn) => {
+      if (btn.dataset.tickBound) return;
+      btn.dataset.tickBound = "true";
+      btn.addEventListener("click", () => {
+        btn.setAttribute("data-is-copied", "true");
+        setTimeout(() => {
+          btn.removeAttribute("data-is-copied");
+        }, 1500);
+      });
+    });
+  }
+
   initArticleHeadings();
-  document.addEventListener("astro:after-swap", initArticleHeadings);
+  initCodeCopyButtons();
+  document.addEventListener("astro:after-swap", () => {
+    initArticleHeadings();
+    initCodeCopyButtons();
+  });
 </script>
