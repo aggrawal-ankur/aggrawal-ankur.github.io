@@ -35,6 +35,7 @@ if (profile?.linkedin) {
 if (profile?.email) {
 	socialLinks.push({ href: `mailto:${profile.email}`, label: "Email" });
 }
+socialLinks.push({ href: withBase("/rss.xml"), label: "RSS" });
 ---
 
 <Schema
