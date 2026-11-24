@@ -628,6 +628,10 @@ const giscusThemes = import.meta.env.PROD
 		font-size: inherit;
 		color: inherit;
 	}
+  .post-article :not(pre) > code {
+    white-space: nowrap;
+    word-break: normal;
+  }
 	/* expressive-code wrapper safety */
 	.post-article .expressive-code {
 		width: 100%;
