@@ -1,7 +1,6 @@
 ---
 import PostList from "@/components/blog/PostList.astro";
 import { getAllPosts, getPostSortDate, sortMDByDate } from "@/data/post";
-import { formatShowcaseTimeline, showcase } from "@/data/showcase";
 import PageLayout from "@/layouts/Base.astro";
 import { siteConfig } from "@/site-config";
 import { formatRailDate, formatStampDate } from "@/utils/date";
@@ -128,35 +127,6 @@ if (profile?.email) {
 			</div>
 		</div>
 	</section>
-
-	{showcase.length > 0 && (
-		<section class="work" aria-labelledby="work-label">
-			<div class="section-label" id="work-label">Showcase</div>
-			<ul class="work-list">
-				{showcase.map((item, idx) => (
-					<li style={`--i: ${idx + 1}`}>
-						<a href={item.href} rel="noreferrer" target="_blank">
-							<div class="head">
-								<div class="head-left">
-									<span class="name">{item.name}</span>
-									<span class="stack">{item.stack}</span>
-								</div>
-								<div class="head-right">
-									{item.badge && <span class="badge">{item.badge}</span>}
-									{item.startDate && item.endDate && (
-										<span class="timeline-range">
-											{formatShowcaseTimeline(item.startDate, item.endDate)}
-										</span>
-									)}
-								</div>
-							</div>
-							<p class="desc">{item.desc}</p>
-						</a>
-					</li>
-				))}
-			</ul>
-		</section>
-	)}
 </PageLayout>
 
 <style>
@@ -309,10 +279,6 @@ if (profile?.email) {
 		text-decoration-color: hsl(var(--theme-accent));
 	}
 
-	.work {
-		margin-bottom: 88px;
-	}
-
 	.socials a:focus-visible,
 	.archive-link a:focus-visible {
 		outline: 2px solid hsl(var(--theme-accent));
@@ -376,9 +342,6 @@ if (profile?.email) {
 		}
 		.post.featured .post-excerpt {
 			font-size: 15px;
-		}
-		.work {
-			margin-bottom: 56px;
 		}
 	}
 </style>
