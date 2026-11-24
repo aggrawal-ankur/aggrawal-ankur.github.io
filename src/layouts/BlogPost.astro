@@ -275,7 +275,7 @@ const giscusThemes = import.meta.env.PROD
 		line-height: 1.55;
 		color: hsl(var(--theme-text) / 0.8);
 		margin: 0 0 14px;
-		max-width: var(--reading-width);
+		max-width: 100%;
 	}
 
 	.post-byline-meta {
@@ -369,7 +369,7 @@ const giscusThemes = import.meta.env.PROD
 	}
 
 	/* Match article body width */
-	.comments { max-width: var(--reading-width); margin: 56px 0 32px; }
+	.comments { max-width: 100%; margin: 56px 0 32px; }
 	.comments .giscus { max-width: 100%; }
 
 	/* Prev/Next post navigation */
@@ -503,6 +503,9 @@ const giscusThemes = import.meta.env.PROD
 
 <style is:global>
 	.post-article {
+		width: 100%;
+		max-width: 100%;
+		min-width: 0;
 		font-family: var(--font-serif);
 		color: hsl(var(--theme-text));
 	}
@@ -514,7 +517,7 @@ const giscusThemes = import.meta.env.PROD
 		word-spacing: 0.04em;
 		color: hsl(var(--theme-text));
 		margin: 0 0 24px;
-		max-width: var(--reading-width);
+		max-width: 100%;
 		word-wrap: break-word;
 		overflow-wrap: anywhere;
 	}
@@ -629,14 +632,27 @@ const giscusThemes = import.meta.env.PROD
 	.post-article .expressive-code {
 		width: 100%;
 		max-width: 100%;
+		min-width: 0;
 		margin: 28px 0;
+		box-sizing: border-box;
+	}
+
+	.post-article table {
+		display: block;
+		width: 100%;
+		max-width: 100%;
+		overflow-x: auto;
+		border-collapse: collapse;
+		margin: 28px 0;
+		box-sizing: border-box;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.post-article ul {
 		margin: 0 0 28px;
 		padding: 0;
 		list-style: none;
-		max-width: var(--reading-width);
+		max-width: 100%;
 	}
 	.post-article ul li {
 		position: relative;
@@ -676,7 +692,7 @@ const giscusThemes = import.meta.env.PROD
 	.post-article ol {
 		margin: 0 0 28px;
 		padding-left: 30px;
-		max-width: var(--reading-width);
+		max-width: 100%;
 	}
 	.post-article ol li {
 		font-size: 17.5px;
@@ -711,7 +727,11 @@ const giscusThemes = import.meta.env.PROD
 		color: hsl(var(--theme-text-muted));
 		font-size: 18px;
 		line-height: 1.65;
-		max-width: var(--reading-width);
+		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
 	}
 	.post-article blockquote > p {
 		white-space: pre-line;
@@ -855,11 +875,18 @@ const giscusThemes = import.meta.env.PROD
 	.post-article .heading-content {
 		display: grid;
 		grid-template-rows: 1fr;
+		grid-template-columns: minmax(0, 1fr);
+		width: 100%;
+		max-width: 100%;
+		min-width: 0;
 		transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
 		opacity: 1;
 	}
 	.post-article .heading-content > .heading-content-inner {
 		min-height: 0;
+		min-width: 0;
+		width: 100%;
+		max-width: 100%;
 	}
 	.post-article .heading-content[data-collapsed="true"] {
 		grid-template-rows: 0fr;

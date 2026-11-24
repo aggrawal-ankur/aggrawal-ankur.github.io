@@ -66,8 +66,10 @@ const {
 
 			/* Sticky footer: wrap fills viewport, main grows to push footer down */
 			.wrap {
-				max-width: 820px;
+				width: 100%;
+				max-width: 68ch;
 				margin: 0 auto;
+				box-sizing: border-box;
 				padding: 36px max(32px, env(safe-area-inset-right))
 					max(80px, env(safe-area-inset-bottom)) max(32px, env(safe-area-inset-left));
 				min-height: 100vh;
@@ -75,7 +77,12 @@ const {
 				display: flex;
 				flex-direction: column;
 			}
-			.wrap > main { flex: 1 0 auto; }
+			.wrap > main {
+				flex: 1 0 auto;
+				width: 100%;
+				max-width: 100%;
+				min-width: 0;
+			}
 
 			@media (max-width: 720px) {
 				.wrap {
