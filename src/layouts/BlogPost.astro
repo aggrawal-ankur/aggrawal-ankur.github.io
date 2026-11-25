@@ -531,6 +531,13 @@ const giscusThemes = import.meta.env.PROD
 		color: hsl(var(--theme-text));
 	}
 
+	.post-article h1,
+	.post-article h2,
+	.post-article h3 {
+		padding-bottom: 0.48em;
+		border-bottom: 2px solid var(--hairline);
+	}
+
 	.post-article h1 {
 		font-family: var(--font-heading);
 		font-weight: 500;
@@ -824,7 +831,7 @@ const giscusThemes = import.meta.env.PROD
 	.post-article .heading-collapse-btn {
 		position: absolute;
 		left: -26px;
-		top: 50%;
+		top: calc(50% - 0.15em);
 		transform: translateY(-50%);
 		display: inline-flex;
 		align-items: center;
