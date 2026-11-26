@@ -1,0 +1,422 @@
+---
+import type { MarkdownHeading } from "astro";
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+
+const { headings } = Astro.props;
+const tocHeadings = headings.filter((h) => h.depth >= 1 && h.depth <= 3);
+const minDepth = tocHeadings.length > 0 ? Math.min(...tocHeadings.map((h) => h.depth)) : 1;
+---
+
+{
+  tocHeadings.length > 0 && (
+    <>
+      <button
+        type="button"
+        class="toc-edge-btn"
+        aria-label="Open table of contents"
+        aria-expanded="false"
+        aria-controls="toc-sidebar"
+      >
+        <svg
+          class="toc-edge-arrow"
+          viewBox="0 0 18 18"
+          width="20"
+          height="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M10.5 4 5.5 9l5 5" />
+          <path d="M14.5 5.5 11 9l3.5 3.5" opacity="0.45" />
+        </svg>
+      </button>
+      <div class="toc-backdrop" aria-hidden="true"></div>
+      <aside id="toc-sidebar" class="toc-sidebar" aria-label="Table of contents" data-pagefind-ignore>
+        <nav class="toc-nav">
+          <div class="toc-title">On this page</div>
+          <ul class="toc-list">
+            {tocHeadings.map((heading) => (
+              <li class="toc-item" data-depth={heading.depth - minDepth}>
+                <a class="toc-link" href={`#${heading.slug}`} data-toc-slug={heading.slug}>
+                  {heading.text}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </aside>
+    </>
+  )
+}
+
+<style>
+  .toc-edge-btn,
+  .toc-backdrop {
+    display: none;
+  }
+
+  @keyframes toc-nudge {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(-4px); }
+  }
+
+  @media (max-width: 1199px) {
+    .toc-edge-btn {
+      position: fixed;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 52px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: hsl(var(--theme-text-muted));
+      opacity: 0.45;
+      cursor: pointer;
+      touch-action: pan-y;
+      z-index: 95;
+      -webkit-tap-highlight-color: transparent;
+      transition: opacity 0.2s ease, color 0.2s ease;
+    }
+
+    .toc-edge-btn:hover,
+    .toc-edge-btn:active {
+      opacity: 0.95;
+      color: hsl(var(--theme-accent));
+    }
+
+    .toc-edge-btn[aria-expanded="true"] {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .toc-edge-arrow {
+      animation: toc-nudge 2.8s ease-in-out infinite;
+    }
+
+    .toc-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.42);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 98;
+      transition: opacity 0.25s ease;
+    }
+
+    .toc-backdrop[data-open="true"] {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .toc-sidebar {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(290px, 80vw);
+      padding: 28px 20px;
+      background: hsl(var(--theme-bg));
+      border-left: 1px solid var(--hairline);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--hairline) transparent;
+      z-index: 99;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      touch-action: pan-y;
+    }
+
+    .toc-sidebar[data-open="true"] {
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toc-edge-arrow {
+      animation: none;
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .toc-sidebar {
+      display: block;
+      position: sticky;
+      top: 36px;
+      min-width: 0;
+      max-height: calc(100vh - 72px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--hairline) transparent;
+    }
+  }
+
+  .toc-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: hsl(var(--theme-text) / 0.55);
+    margin-bottom: 8px;
+  }
+
+  .toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-left: 1px solid var(--hairline);
+  }
+
+  .toc-item {
+    margin: 0;
+  }
+
+  .toc-link {
+    display: block;
+    margin-left: -1px;
+    padding: 3.5px 0 3.5px 12px;
+    border-left: 2px solid transparent;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.4;
+    color: hsl(var(--theme-text-muted));
+    text-decoration: none;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    transition: color 0.18s ease, border-color 0.18s ease;
+  }
+
+  .toc-item[data-depth="1"] .toc-link {
+    padding-left: 24px;
+  }
+
+  .toc-item[data-depth="2"] .toc-link {
+    padding-left: 36px;
+  }
+
+  .toc-link:hover {
+    color: hsl(var(--theme-text));
+  }
+
+  .toc-link.is-active {
+    color: hsl(var(--theme-accent));
+    border-left-color: hsl(var(--theme-accent));
+  }
+
+  .toc-link:focus-visible {
+    outline: 2px solid hsl(var(--theme-accent));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+</style>
+
+<script>
+  let tocScrollCleanup: (() => void) | null = null;
+
+  function initTableOfContents() {
+    tocScrollCleanup?.();
+    tocScrollCleanup = null;
+
+    const sidebar = document.querySelector<HTMLElement>(".toc-sidebar");
+    if (!sidebar) return;
+
+    const links = Array.from(sidebar.querySelectorAll<HTMLAnchorElement>(".toc-link"));
+    if (links.length === 0) return;
+
+    const linkBySlug = new Map<string, HTMLAnchorElement>();
+    const headings: HTMLElement[] = [];
+
+    links.forEach((link) => {
+      const slug = link.dataset.tocSlug;
+      if (!slug) return;
+      linkBySlug.set(slug, link);
+      const target = document.getElementById(slug);
+      if (target) headings.push(target);
+    });
+
+    if (headings.length === 0) return;
+
+    let activeSlug = "";
+    let ticking = false;
+
+    function setActive(slug: string) {
+      if (slug === activeSlug) return;
+      activeSlug = slug;
+      let activeLink: HTMLAnchorElement | null = null;
+      links.forEach((link) => {
+        const isCurrent = link.dataset.tocSlug === slug;
+        link.classList.toggle("is-active", isCurrent);
+        if (isCurrent) {
+          link.setAttribute("aria-current", "location");
+          activeLink = link;
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+
+      if (activeLink && sidebar) {
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const linkRect = (activeLink as HTMLAnchorElement).getBoundingClientRect();
+        const pad = 40;
+        if (linkRect.top < sidebarRect.top + pad) {
+          sidebar.scrollBy({ top: linkRect.top - sidebarRect.top - pad, behavior: "smooth" });
+        } else if (linkRect.bottom > sidebarRect.bottom - pad) {
+          sidebar.scrollBy({ top: linkRect.bottom - sidebarRect.bottom + pad, behavior: "smooth" });
+        }
+      }
+    }
+
+    function updateActiveHeading() {
+      ticking = false;
+      const threshold = 140;
+      let current = headings[0]?.id ?? "";
+
+      for (const h of headings) {
+        if (h.getBoundingClientRect().top <= threshold) {
+          current = h.id;
+        } else {
+          break;
+        }
+      }
+
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+        current = headings[headings.length - 1]?.id ?? current;
+      }
+
+      setActive(current);
+    }
+
+    function onScroll() {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(updateActiveHeading);
+      }
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    const edgeBtn = document.querySelector<HTMLButtonElement>(".toc-edge-btn");
+    const backdrop = document.querySelector<HTMLElement>(".toc-backdrop");
+    let isOpen = false;
+    let pushedHistory = false;
+
+    function setDrawerOpen(open: boolean, fromPopState = false) {
+      if (isOpen === open) return;
+      isOpen = open;
+      if (open) {
+        sidebar?.setAttribute("data-open", "true");
+        backdrop?.setAttribute("data-open", "true");
+      } else {
+        sidebar?.removeAttribute("data-open");
+        backdrop?.removeAttribute("data-open");
+      }
+      edgeBtn?.setAttribute("aria-expanded", open ? "true" : "false");
+
+      if (open) {
+        if (!pushedHistory) {
+          history.pushState({ tocOpen: true }, "");
+          pushedHistory = true;
+        }
+        const activeEl = sidebar?.querySelector<HTMLElement>(".toc-link.is-active");
+        activeEl?.scrollIntoView({ block: "nearest" });
+      } else if (!fromPopState && pushedHistory) {
+        pushedHistory = false;
+        if (history.state?.tocOpen) history.back();
+      } else {
+        pushedHistory = false;
+      }
+    }
+
+    function onEdgeClick() {
+      setDrawerOpen(true);
+    }
+
+    function onBackdropClick() {
+      setDrawerOpen(false);
+    }
+
+    function onPopState() {
+      if (isOpen) setDrawerOpen(false, true);
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && isOpen) setDrawerOpen(false);
+    }
+
+    let edgeTouchX = 0;
+    let edgeTouchY = 0;
+    function onEdgeTouchStart(e: TouchEvent) {
+      edgeTouchX = e.touches[0]?.clientX ?? 0;
+      edgeTouchY = e.touches[0]?.clientY ?? 0;
+    }
+    function onEdgeTouchEnd(e: TouchEvent) {
+      const dx = (e.changedTouches[0]?.clientX ?? edgeTouchX) - edgeTouchX;
+      const dy = (e.changedTouches[0]?.clientY ?? edgeTouchY) - edgeTouchY;
+      if (dx < -28 && Math.abs(dx) > Math.abs(dy)) setDrawerOpen(true);
+    }
+
+    let drawerTouchX = 0;
+    let drawerTouchY = 0;
+    function onDrawerTouchStart(e: TouchEvent) {
+      drawerTouchX = e.touches[0]?.clientX ?? 0;
+      drawerTouchY = e.touches[0]?.clientY ?? 0;
+    }
+    function onDrawerTouchEnd(e: TouchEvent) {
+      const dx = (e.changedTouches[0]?.clientX ?? drawerTouchX) - drawerTouchX;
+      const dy = (e.changedTouches[0]?.clientY ?? drawerTouchY) - drawerTouchY;
+      if (dx > 40 && Math.abs(dx) > Math.abs(dy)) setDrawerOpen(false);
+    }
+
+    function onLinkClick(e: Event) {
+      if (!isOpen) return;
+      const link = (e.currentTarget as HTMLAnchorElement);
+      const slug = link.dataset.tocSlug;
+      if (!slug) return;
+      e.preventDefault();
+      isOpen = false;
+      sidebar?.removeAttribute("data-open");
+      backdrop?.removeAttribute("data-open");
+      edgeBtn?.setAttribute("aria-expanded", "false");
+      if (pushedHistory) {
+        pushedHistory = false;
+        history.replaceState(null, "", `#${slug}`);
+      } else {
+        history.replaceState(null, "", `#${slug}`);
+      }
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      document.getElementById(slug)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    edgeBtn?.addEventListener("click", onEdgeClick);
+    edgeBtn?.addEventListener("touchstart", onEdgeTouchStart, { passive: true });
+    edgeBtn?.addEventListener("touchend", onEdgeTouchEnd, { passive: true });
+    backdrop?.addEventListener("click", onBackdropClick);
+    sidebar.addEventListener("touchstart", onDrawerTouchStart, { passive: true });
+    sidebar.addEventListener("touchend", onDrawerTouchEnd, { passive: true });
+    links.forEach((l) => l.addEventListener("click", onLinkClick));
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("keydown", onKeyDown);
+
+    tocScrollCleanup = () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+    updateActiveHeading();
+  }
+
+  initTableOfContents();
+  document.addEventListener("astro:after-swap", initTableOfContents);
+</script>

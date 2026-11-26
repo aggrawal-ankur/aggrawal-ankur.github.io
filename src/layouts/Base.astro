@@ -9,10 +9,12 @@ import type { SiteMeta } from "@/types";
 
 interface Props {
 	meta: SiteMeta;
+	hasToc?: boolean;
 }
 
 const {
 	meta: { articleDate, description = siteConfig.description, ogImage, title },
+	hasToc = false,
 } = Astro.props;
 ---
 
@@ -23,7 +25,7 @@ const {
 	</head>
 	<body>
 		<SkipLink />
-		<div class="wrap">
+		<div class:list={["wrap", { "wrap--with-toc": hasToc }]}>
 			<Header />
 			<main id="main">
 				<slot />
@@ -39,7 +41,7 @@ const {
 			body {
 				margin: 0;
 				padding: 0;
-				overflow-x: hidden;
+				overflow-x: clip;
 			}
 			body {
 				background-color: hsl(var(--theme-bg));
@@ -82,6 +84,16 @@ const {
 				width: 100%;
 				max-width: 100%;
 				min-width: 0;
+			}
+
+			@media (min-width: 1200px) {
+				.wrap--with-toc {
+					max-width: 1048px;
+				}
+				.wrap--with-toc > .site-header,
+				.wrap--with-toc > .site-footer {
+					max-width: calc(100% - 318px);
+				}
 			}
 
 			@media (max-width: 720px) {

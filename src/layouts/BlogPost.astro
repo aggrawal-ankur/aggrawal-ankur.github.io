@@ -3,6 +3,7 @@ import { type CollectionEntry, render } from "astro:content";
 import { Image } from "astro:assets";
 
 import ShareButtons from "@/components/blog/ShareButtons.astro";
+import TableOfContents from "@/components/blog/TableOfContents.astro";
 import WebMentions from "@/components/blog/webmentions/index.astro";
 import { getAllPosts, sortMDByDate } from "@/data/post";
 import { siteConfig } from "@/site-config";
@@ -28,7 +29,8 @@ const {
 } = post;
 const socialImage = ogImage ?? `/og-image/${slug}.png`;
 const articleDate = updatedDate?.toISOString() ?? publishDate.toISOString();
-const { remarkPluginFrontmatter } = await render(post);
+const { headings, remarkPluginFrontmatter } = await render(post);
+const hasToc = headings.some((h) => h.depth >= 1 && h.depth <= 3);
 
 const authorName = siteConfig.profile?.name ?? siteConfig.author;
 const comments = siteConfig.comments;
@@ -71,7 +73,7 @@ const giscusThemes = import.meta.env.PROD
 	}}
 />
 
-<BaseLayout meta={{ articleDate, description, ogImage: socialImage, title }}>
+<BaseLayout meta={{ articleDate, description, ogImage: socialImage, title }} hasToc={hasToc}>
 	<div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
 	<div class="post-shell">
 		<div class="post-main" data-pagefind-body>
@@ -136,9 +138,12 @@ const giscusThemes = import.meta.env.PROD
 				<hr class="rule" />
 			)}
 
-			<article class="post-article">
-				<slot />
-			</article>
+			<div class="post-body-grid">
+				<article class="post-article">
+					<slot />
+				</article>
+				<TableOfContents headings={headings} />
+			</div>
 
 			<ShareButtons title={title} url={postUrl} description={description} />
 
@@ -189,6 +194,22 @@ const giscusThemes = import.meta.env.PROD
 
 <style>
 	.post-shell { display: block; position: relative; }
+
+	.post-body-grid {
+		padding-top: 16px;
+	}
+
+	@media (min-width: 1200px) {
+		.post-shell:has(.toc-sidebar) .post-main > :not(.post-body-grid) {
+			max-width: calc(100% - 318px);
+		}
+		.post-shell:has(.toc-sidebar) .post-body-grid {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 230px;
+			gap: 88px;
+			align-items: start;
+		}
+	}
 
 	.reading-progress {
 		position: fixed;
@@ -510,6 +531,10 @@ const giscusThemes = import.meta.env.PROD
 		color: hsl(var(--theme-text));
 	}
 
+	.post-article > :first-child {
+		margin-top: 0;
+	}
+
 	.post-article > p,
 	.post-article .heading-content-inner > p {
 		font-size: 17.5px;
@@ -546,7 +571,7 @@ const giscusThemes = import.meta.env.PROD
 		letter-spacing: normal;
 		word-spacing: 0.02em;
 		color: hsl(var(--theme-text));
-		margin: 60px 0 22px;
+		margin: 42px 0 18px;
 		word-wrap: break-word;
 		overflow-wrap: anywhere;
 	}
@@ -558,7 +583,7 @@ const giscusThemes = import.meta.env.PROD
 		letter-spacing: normal;
 		word-spacing: 0.02em;
 		color: hsl(var(--theme-text));
-		margin: 56px 0 20px;
+		margin: 38px 0 16px;
 		word-wrap: break-word;
 		overflow-wrap: anywhere;
 	}
@@ -570,7 +595,7 @@ const giscusThemes = import.meta.env.PROD
 		letter-spacing: normal;
 		word-spacing: 0.02em;
 		color: hsl(var(--theme-text));
-		margin: 38px 0 14px;
+		margin: 28px 0 12px;
 		word-wrap: break-word;
 		overflow-wrap: anywhere;
 	}
@@ -948,9 +973,9 @@ const giscusThemes = import.meta.env.PROD
 			font-size: 17px;
 			line-height: 1.72;
 		}
-		.post-article h1 { font-size: 28px; margin: 48px 0 18px; }
-		.post-article h2 { font-size: 23px; margin: 44px 0 16px; }
-		.post-article h3 { font-size: 18.5px; margin: 30px 0 12px; }
+		.post-article h1 { font-size: 28px; margin: 36px 0 16px; }
+		.post-article h2 { font-size: 23px; margin: 32px 0 14px; }
+		.post-article h3 { font-size: 18.5px; margin: 24px 0 10px; }
 		.post-article :not(pre) > code { font-size: 13.5px; }
 		.post-article figure { margin: 28px 0; }
 	}
@@ -967,9 +992,9 @@ const giscusThemes = import.meta.env.PROD
 			font-size: 16px;
 			line-height: 1.7;
 		}
-		.post-article h1 { font-size: 25px; margin: 40px 0 16px; }
-		.post-article h2 { font-size: 20px; margin: 36px 0 14px; }
-		.post-article h3 { font-size: 17px; margin: 26px 0 10px; }
+		.post-article h1 { font-size: 25px; margin: 32px 0 14px; }
+		.post-article h2 { font-size: 20px; margin: 28px 0 12px; }
+		.post-article h3 { font-size: 17px; margin: 22px 0 10px; }
 		.post-article ul { padding-left: 0; }
 		.post-article ul li { padding-left: 18px; }
 		.post-article blockquote { padding-left: 16px; font-size: 16.5px; }
