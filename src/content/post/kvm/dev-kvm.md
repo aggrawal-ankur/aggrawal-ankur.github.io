@@ -243,11 +243,19 @@ I don't know why, but I'd love to know. I am sure we are missing something that 
 
 ---
 
-It's time to explore the structures that implement these ideas.
+That's the Virtual Filesystem.
+
+We have started our journey from regular files and now we know the basis of all these different types of files in Linux.
+
+It is evident that regular files are a great starting point into the VFS, but understanding them doesn't imply we understand all the different types, let alone the VFS itself.
+
+The VFS is huge, and these efforts merely provide the right base to understand the rest of the files, hence the VFS. We have also explored only those parts that are relevant to us.
+
+Anyways, it's time to explore the structures that implement these ideas.
 
 # Kernel Structures
 
-Now we will explore the structures that implement the resource metadata and per-session metadata. The resource that backs a file is discussed in detail later.
+Now we will explore the structures that implement the resource metadata and per-session metadata. The resource that backs a file is discussed later.
 
 The following structures are relevant to this exploration.
 
@@ -262,20 +270,14 @@ The following structures are relevant to this exploration.
 
 > *Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another, which naturally creates a circular dependency. A lot of these fields won't make full sense right now, and I recommend you not to force it. They'll make sense once we have the full picture.*
 
-CONTINUE HERE.
+## Resource Metadata (Inode)
 
-## Index Node (or inode)
+***An inode (index node) is the kernel's master record for a single, distinct entity in a filesystem. It contains everything the OS needs to know about that entity, except its name.***
+> *We will discuss the WHY later.*
 
-***An inode is the kernel's master record for a single, distinct entity in a filesystem. It contains everything the OS needs to know about that entity, except its name.***
-> *We will talk about this quirk in sufficient detail later.*
->
-> *For now, the struct definition.*
+Inodes are local to a filesystem. That's why, the same inode number can exist in multiple filesystems. That means, an inode number is not enough to identify an inode. We need to know the filesystem it belongs to as well. However, that detail is not relevant here, so we will skip it.
 
-Inodes are local to a filesystem. Therefore, the same inode number can exist in multiple filesystems. That means, an inode number is not enough to identify an inode. We need to know the filesystem it belongs to as well. However, that detail is not required here so we will skip it.
-
-For storage filesystems, there are on-disk inodes, which are separate from the VFS inode structure. Every storage fs has its own format for on-disk inodes. They are compact and only contain passive persistent state. They are read and VFS inodes are created from them on-demand.
-
-Note: Only 16/56 members are relevant here. The complete struct can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
+Note: Only 15/56 members are relevant here. The complete struct can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n762).
 
 ```c
 struct inode {
@@ -284,15 +286,14 @@ struct inode {
   kuid_t i_uid;
   kgid_t i_gid;
 
-  const struct inode_operations	*i_op;
-  u64  i_ino;
+  u64    i_ino;
 
   union {
     const unsigned int i_nlink;
     unsigned int __i_nlink;
   };
 
-  dev_t	i_rdev;
+  dev_t  i_rdev;
   loff_t i_size;
 
   time64_t i_atime_sec;
@@ -310,7 +311,7 @@ struct inode {
 
   union {
     struct pipe_inode_info	*i_pipe;
-    struct cdev	 *i_cdev;
+    struct cdev  *i_cdev;
     char         *i_link;
     unsigned      i_dir_seq;
   };
@@ -321,31 +322,39 @@ Below is a description of each field.
 
 | Field | Description |
 | :---- | :---------- |
-| `i_mode` | Bitmask encoding the file type (e.g. `S_IFCHR` for character devices and `S_IFREG` for regular files) and file access permissions (e.g. `0660`). |
-| `i_uid` | User ID of the file owner. |
-| `i_gid` | Group ID of the file. |
-| `i_op`  | Pointer to the `struct inode_operations`, defining metadata and directory tree functions. |
-| `i_ino` | Inode number. A unique 64-bit identifier for this inode in its file system. |
+| `i_mode`  | Bitmask encoding the file type (e.g. `S_IFCHR` for character devices and `S_IFREG` for regular files) and file access permissions (e.g. `0660`). |
+| `i_uid`   | User ID of the file owner. |
+| `i_gid`   | Group ID of the file. |
+| `i_ino`   | A 64-bit unique identifier (inode number) for this inode in its filesystem. |
 | `i_nlink` | Number of hard links pointing to this inode. |
-| `i_rdev`  | Device number. Only meaningful for character and block device. |  
+| `i_rdev`  | Device number. Only meaningful for character and block device files. Discussed later in the devices section. |
 | `i_size`  | File size in bytes. For regular files, indicates content length; for device nodes like `/dev/kvm`, it is 0. |
 | `i_atime_sec`, `i_atime_nsec` | Timestamp of the last file access (seconds and nanoseconds). |
 | `i_mtime_sec`, `i_mtime_nsec` | Timestamp of the last file content modification (seconds and nanoseconds). |
 | `i_ctime_sec`, `i_ctime_nsec` | Timestamp of the last inode status/metadata change (seconds and nanoseconds). |
-| `i_fop` | Pointer to the `struct file_operations`. |
+| `i_fop` | Pointer to the `struct file_operations` instance associated with this inode. Discussed later in the devices section. |
 | `i_cdev`<br>in the last union | Pointer to `struct cdev`. Cached in the union once the character device is resolved. |
 | `i_link`<br>in the last union | Pointer to the target path string when the inode represents a symbolic link. |
 
 
-## An instance of an Inode
+When a file is stored on the disk, we need some metadata to locate it on the storage hardware. This (among other storage fs specific) information is stored in another type of inode, called an on-disk inode.
+
+The layout of the VFS inode is generic. It contains fields which aren't relevant to storage filesystems. If it is used as an on-disk inode, it would waste a lot of bytes. Moreover, different storage filesystems do it differently, so the layout of an on-disk inode is dependent on the storage filesystem.
+
+When a file is accessed, its on-disk inode is read from the disk and a VFS inode is created from it.
+> *A `struct file` is an instance of a `struct inode`, generating which requires reading an on-disk inode? Isn't that a chicken-and-egg problem? Yeah. However, it is not relevant to us, so we will not explore it.*
+
+---
+
+"***This exploration has no business with on-disk inodes, so throughout this discussion, the term 'inode' will represent a VFS inode.***"
+
+## An Open Session (Instance of an Inode)
 
 ***A*** `struct file` ***represents an active, open session with an inode in memory.***
 
-While the inode holds the permanent state of the entity, `struct file` holds the per-session state of whoever is currently interacting with it.
+While the inode holds the permanent metadata about the resource, a `struct file` instance represents the metadata corresponding to an open session.
 
-If a "file" is opened 10 times, there will be 10 instances of `struct file`, but the inode remains only 1.
-
-**Note: Only 8/19 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).**
+**Note: Only 7/19 members are relevant. The complete structure can be accessed at [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12#n1255).**
 
 ```c
 struct file {
@@ -355,11 +364,6 @@ struct file {
   void          *private_data;
   struct inode  *f_inode;
   unsigned int   f_flags;
-
-  union {
-    const struct path	f_path;
-    struct path  		__f_path;
-  };
 
   loff_t      f_pos;
   file_ref_t  f_ref;
@@ -371,13 +375,12 @@ Below is a description of each field.
 | Field | Description |
 | :---- | :---------- |
 | `f_mode` | Bitmask of internal kernel access modes (e.g. `FMODE_READ`, `FMODE_WRITE`, `FMODE_LSEEK`). |
-| `f_op`   | Pointer to the `struct file_operations` dispatch table. |
-| `private_data` | Generic pointer used by drivers to attach per-instance state. |
+| `f_op`   | Pointer to the `struct file_operations` table. Discussed later in the devices section. |
+| `private_data` | Generic pointer used by drivers to attach per-instance state. Discussed in `/dev/kvm` part later. |
 | `f_inode` | Pointer to the underlying `struct inode`. |
-| `f_flags` | Status and access flags passed from userspace to `open()` (e.g. `O_RDWR` and `O_CLOEXEC`). |
-| `f_path`  | Contains pointers to the `struct dentry` and `struct vfsmount` for this open file. |
-| `f_pos`   | Current byte offset in the file. Useful to regular files, directories and block devices. |
-| `f_ref`   | A file struct can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same file struct. This member counts those references. The `struct file` and underlying state is destroyed only when `f_ref` drops to 0. |
+| `f_flags` | Status and access flags passed with `open()` from the userspace (e.g. `O_RDWR` and `O_CLOEXEC`). |
+| `f_pos`   | Current byte offset in the file. Relevant to regular files, directories and block devices.<br>Irrelevant to non-seekable files like/dev/kvm, pipes, and sockets. |
+| `f_ref`   | A `struct file` instance can be shared across processes by the means of `fork()`, or file descriptors can be copied using `dup()` or `dup2()`, in which case, they point to the same `struct file` instance.<br>This member counts those references. The `struct file` instance and the underlying state is destroyed only when `f_ref` drops to 0. |
 
 
 ## Directory Files
@@ -406,7 +409,7 @@ Reading these entries from disk every single time we navigate a path would be ve
 
 ## An Entry In A Directory File
 
-An entry in a directory file is represented by `struct dentry`, which literally stands for "directory entry".
+An entry in a directory file is represented by `struct dentry`, which stands for "directory entry".
 
 **Note: Only 5/16 members are relevant to us. The complete structure can be accessed at [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n93).**
 
@@ -436,19 +439,16 @@ Below is a description of each field.
 | | For the root directory `/`, it points to itself. |
 | | For `file` in `/path/to/a/file`, it points to the dentry of `a`. |
 | `d_shortname` | An inline character buffer union. |
-| | If the filename is short (like `"kvm"`), the string is stored directly inside the dentry struct to avoid a separate heap allocation. |
+| | If the filename is short enough (like `"kvm"`), the string is stored directly inside the dentry struct to avoid a separate heap allocation. |
 | `d_children` | Head of the linked list containing all child dentries for a particular directory file. |
-| | Meaningful only if this dentry is for a directory file. For a leaf node like "kvm" in `/dev/kvm`, this list is empty. |
+| | Meaningful only if this dentry is for a directory file. For a leaf node, like `"kvm"` in `/dev/kvm`, this list is empty. |
 
-A `dentry` is probably the simplest structure in this exploration. However, if you have eagle-eyes, you would have noticed two things.
-  1. The function of `d_children` is that of a pointer, but it is declared like a structure.
-  2. How the kernel knows who points to the filename: `d_name` or `d_shortname`?
 
-Let's talk about them.
+### d_children
 
----
+You may notice that the function of `d_children` is that of a pointer, but it is defined like a structure.
 
-`struct hlist_head`, the type of `d_children`, is declared in [*root/include/linux/types.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/types.h?h=v7.2.12#n208).
+The type of `d_children`, i.e. `struct hlist_head`, is declared in [*root/include/linux/types.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/types.h?h=v7.2.12#n208).
 ```c
 struct hlist_node {
   struct hlist_node *next, **pprev;
@@ -459,32 +459,40 @@ struct hlist_head {
 };
 ```
 
-You can notice that it is a pointer. But why this indirection? Honestly, it never felt important so I have never explored it in the first place.
+So, it is a pointer. But why this indirection? It's not relevant, so I skipped it.
 
----
+### The location of the character buffer
 
-`struct qstr`, the type of `d_name`, is declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n49) as follows.
+The type of `d_name`, i.e. `struct qstr`, is declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n49).
 ```c
 struct qstr {
   union { ... };
   const unsigned char *name;
 };
 ```
-> *The union doesn't concern us, so it is removed.*
+> *The union is not relevant, so it is removed.*
 
-`struct shortname_store`, the type of `d_shortname`, is declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n84) as follows.
+The type of `d_shortname`, i.e. `struct shortname_store`, is also declared in [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12#n84).
 ```c
+/* In 64-bit Kernel */
+#define DNAME_INLINE_WORDS 5
+
+/* 5x8 = 40 bytes */
+#define DNAME_INLINE_LEN (DNAME_INLINE_WORDS*sizeof(unsigned long))
+
 union shortname_store {
   unsigned char string[DNAME_INLINE_LEN];
-  unsigned long words[DNAME_INLINE_WORDS];
+  /* one element omitted */
 };
 ```
 
-If the filename is short enough, it is written into `d_shortname.string` and the kernel sets `d_name.name` to point to `d_shortname.string`. Otherwise, `d_name.name` points to a heap-allocated string.
+`struct qstr dname` basically declares a character pointer.
+  - If the filename is short enough, it is written into `d_shortname.string` and the kernel sets `d_name.name` to `d_shortname.string`. This saves us a heap allocation.
+  - Otherwise, `d_name.name` points to a heap-allocated string.
 
-So, in either case, `dentry->d_name.name` points to the filename and the kernel need not to check it. *Pretty impressive, huh?*
+So, in either case, `dentry->d_name.name` points to the filename.
 
-However, in case the kernel needs to know this detail, it can use the following function defined in [*root/fs/dcache.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/dcache.c?h=v7.2.12#n356).
+If the kernel want to know whether the string is on the heap or not (like, to free it later), it can use the following function defined in [*root/fs/dcache.c*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/fs/dcache.c?h=v7.2.12#n356).
 ```c
 static inline 
 int dname_external(const struct dentry *dentry)
@@ -493,13 +501,11 @@ int dname_external(const struct dentry *dentry)
 }
 ```
 
-I don't know about others, but reading kernel code can easily get boring when I am repeatedly seeing the same thing every single day. It gets worse when nothing makes sense.
-
-But the moment I see stuff like this and it clicks, I get such a dopamine rush that no cheap source can match, not even remotely.
-
 ---
 
-***Note: How dentries are constructed and maintained is a detail that is not relevant to this exploration, so it is not explored here.***
+***Note: How dentries are constructed is a detail that is not relevant to this exploration, so it is skipped.***
+
+CONTINUE FROM HERE
 
 ## Why an inode lacks a filename?
 
