@@ -137,18 +137,17 @@ Let's understand the virtual file system.
 
 # Virtual File System (VFS)
 
-The kernel defines a general filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
+The kernel defines a generic filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to make this abstraction possible.
 
 I understand this abstraction as a "***contract***", and if a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
 
-The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints in that implementation are modeled into the contract.
+The contract is defined such that it doesn't alter a filesystem's implementation; it only requires its implementation to register its entrypoints with the VFS interface. Take `read()`, for example.
 
-For example, take `read()`. This abstraction is designed to "***read a file***".
-  - Different storage hardware "read" data differently. Therefore, the driver that communicates with the hardware is different.
-  - But from the perspective of a storage filesystem, how a storage device is read/write doesn't matter. It only guides the driver that does the job of reading/writing. A layered abstraction, basically.
-  - The storage filesystem provides this function that initiates the job of "reading a file" to the VFS and the VFS maps it to its generic `read()` abstraction.
-  - When a process opens a file and calls `read()` on it, the VFS identifies the details and routes the request to the relevant filesystem handler, which calls the relevant hardware handler.
-  - We don't call different functions to read/write from/to an SSD, HDD, or a USB drive. The public API remains the same, only the internal functions vary.
+  - Every type of storage hardware reads data differently, so a hardware driver manages the physical communication.
+  - To read a file, the hardware driver needs to know which blocks on the storage device to read.
+  - A function in the storage filesystem's driver calls the hardware driver with this information.
+  - The storage filesystem registers this function that initiates the job of "reading a file" with the generic `read()` abstraction in the VFS.
+  - When a process opens a file and calls `read()`, the VFS simply calls the function in `read`, which invokes the hardware driver.
 
 ---
 
@@ -161,16 +160,12 @@ Therefore, the VFS is best understood as a contract and the next step is to unde
 
 | Sr. | Feature Set | Brief Contract Details | Associated Structures |
 | :-- | :---------- | :--------------------- | :-------------------- |
-| 1 | **The Entity** | An identity for the resource. | `struct inode` ,<br>`struct dentry` |
-| 2 | **Access Control** | Standard permission checks before the access is granted. | `struct inode` |
-| 3 | **The Session** | An active, stateful dialogue between a process and an entity. Multiple sessions can be opened for the same resource. | `struct file` |
-| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token, protecting the kernel address space. | `struct files_struct` |
+| 1 | **The Entity** | An identity of the resource. | `struct inode` ,<br>`struct dentry` |
+| 2 | **Access Control** | Standard permission checks before access is granted. | `struct inode` |
+| 3 | **The Session** | An active, stateful dialogue between a process and an entity. Multiple sessions can be opened for the same resource. More on this later. | `struct file` |
+| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token to safely access the session in the kernel space. | `struct files_struct` |
 | 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers. | `struct file_operations` |
 | | | Deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. |
-
-> *If the description of an "entity" reads like "this is what a file is, isn't it?", I recommend you to hold it for a while. There is a reason I have used the term "entity", instead of "file".*
-
----
 
 ## Trade-offs
 
@@ -202,86 +197,72 @@ A contract template by itself is just a set of rules. It only comes into reality
 
 A file was basically "text" or "binary" to me. But how the kernel is supposed to implement this idea? A set of abstractions are required. That's why, from the perspective of the Linux kernel, a file is more than a "***bunch of bytes***".
 
-The text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and it is successful in that endeavour.
+Therefore, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and it is successful in that endeavour.
 
 We need more than just the text to create a text file. Along with the "data" on the disk, we need some "metadata" that describes that "data" that facilitate "operations" on (or around) it.
 
 ---
 
-We have the storage hardware where the bytes reside, and a machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs a file.***"
+We have the storage hardware where the bytes reside, and the machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs it.***"
 
-We have seen this before, but where? "***The separation between an OS and the hardware.***"
+Can you recall where we have seen this before? "***It is the separation between an OS and the hardware.***"
   - A combination of hardware provides raw capabilities. An OS hooks into them and provides an interface to utilize them.
-  - Different OSs tap on those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
+  - Different OSes tap into those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
 
 Think about it. A text file stored on a physical storage device is backed by it. How about replacing the backing with something else?
-  - Replace hardware storage with a table of names and pointers, and we get a directory file.
-  - Replace hardware storage with a character-stream hardware device (like a serial port or terminal), and we get a character device file.
+  - Replace hardware storage with a table of names and inodes, and we get a directory file.
   - Replace hardware storage with the KVM kernel module (which taps into the VMX capabilities of the hardware), and we get `/dev/kvm`.
   - Replace hardware storage with a ring buffer in RAM, and we get a pipe.
-  - Replace hardware storage with a network interface card (NIC), and we get a socket.
-
----
+  - Replace hardware storage with the network stack, and we get a socket.
 
 That's how we get those weird looking files.
 
-If a text talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
-
-It is clear that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the other types of files, let alone the VFS abstraction.
-
-The VFS is huge, and these efforts merely provide the right base to understand the rest of the files, hence the VFS.
-
 ---
 
-There is one last thing that needs to be explored, before we conclude "***what a file is?***"
-
-## One File Opened at Multiple Sites
-
-So far, we have a resource that backs a file, some metadata about it and a driver that provides the operations applicable on that resource.
-
-A file can be opened at multiple sites simultaneously. If you aren't aware of it, please try it out right now.
-
-Each active instance has its own state. To make simultaneous access possible, the kernel needs to manage a per-instance metadata. That's the last component of a file.
-
-Therefore, a file in Linux is made up of 3 components.
+Therefore, what we perceive as a file in Linux is made up of 2 things.
   1. The resource backing the file.
   2. The metadata describing the resource.
-  3. The metadata associated with an open file description.
 
-## A Surprise
+However, there is one last thing that needs to be explored.
 
-What could be surprising here? The terminology.
+## Opening a File
 
-What we perceive as a "***file***" is the combination of per-instance metadata, resource metadata (inode and dentry) and the resource backing them.
+Opening a file is about creating a session with it.
 
-However, in the Linux kernel's terminology, the metadata about the resource is divided in two structures: "***inode***" and "***dentry***", and the per-instance metadata is called a "***file***".
+A file can be opened at multiple sites simultaneously, which means multiple sessions. If you aren't aware of it, please try it out right now.
 
-This terminology is why the feature set table uses the term "***entity***", not "***file***".
+To make this simultaneous access possible, the kernel has to manage metadata for each open session.
 
-I don't know why the terminology is like this, but I'd love to know.
+This per-session metadata is represented by `struct file`.
 
----
+As we have seen, what we perceive as a file is "***resource + metadata***". But, physically, the kernel has reserved the term "file" for the "per-session" metadata.
+
+I don't know why, but I'd love to know. I am sure we are missing something that is making it all sound strange.
 
 "***In this text, we will use the term "file" to represent what we perceive as a file and `struct file` to represent the per-instance metadata.***"
 
-Let's explore the actual structures corresponding to these ideas.
+---
 
-CONTINUE FROM HERE.
+It's time to explore the structures that implement these ideas.
 
 # Kernel Structures
 
+Now we will explore the structures that implement the resource metadata and per-session metadata. The resource that backs a file is discussed in detail later.
+
 The following structures are relevant to this exploration.
 
-| Structures | Files |
-| ---------- | ----- |
-| `inode` and `inode_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `file` and `file_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
-| `dentry` | [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
-| `fdtable` and `files_struct` | [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
+| Class | Structures | Files |
+| ----- | ---------- | ----- |
+| Resource Metadata | `inode` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| Resource Metadata | `dentry` | [*root/include/linux/dcache.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/dcache.h?h=v7.2.12) |
+| Resource Metadata | `file_operations` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| Per-Session Metadata | `file` | [*root/include/linux/fs.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fs.h?h=v7.2.12) |
+| Process-level State | `files_struct` | [*root/include/linux/fdtable.h*](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/fdtable.h?h=v7.2.12) |
 
-We will explore them one-by-one.
 
-> *Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another. This creates an inherent circular dependency. We can not fully understand a struct until others are introduced. Therefore, if a field don't make sense, don't force it.*
+> *Please note that these structures don't exist in isolation. Their shape is heavily influenced by one another, which naturally creates a circular dependency. A lot of these fields won't make full sense right now, and I recommend you not to force it. They'll make sense once we have the full picture.*
+
+CONTINUE HERE.
 
 ## Index Node (or inode)
 
@@ -1093,12 +1074,11 @@ You will find similar indirection for others as well.
 
 ---
 
-That's enough of the Virtual Filesystem abstraction. It has more details, but they aren't relevant to us.
+That's enough of the Virtual Filesystem. Obviously it has more details, but they aren't relevant to us.
 
-In our exploration, we have noticed that a file is made up of three components.
+In our exploration, we have learned that what we perceive as a file is made up of two components.
   1. A resource.
   2. Metadata about the resource.
-  3. An instance of the resource.
 
 We have already explored the "*metadata*" and the "*instance*" parts of a file. However, the exploration was partial as many fields didn't made any sense. We have to explore the third component, i.e. the resource backing a file, to complete our understanding. This is where we will explore devices as well.
 
