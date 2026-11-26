@@ -1226,7 +1226,7 @@ const giscusThemes = import.meta.env.PROD
     });
 
     // 3. Auto-expand section if hash matches target or child
-    function expandTargetFromHash() {
+    function expandTargetFromHash(shouldScroll = true) {
       const hash = window.location.hash.slice(1);
       if (!hash) return;
       const target = document.getElementById(hash);
@@ -1252,14 +1252,33 @@ const giscusThemes = import.meta.env.PROD
         parent = parent.parentElement;
       }
 
-      // Ensure smooth scroll to target after DOM settles
-      setTimeout(() => {
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
+      if (shouldScroll) {
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
+      }
     }
 
-    expandTargetFromHash();
-    window.addEventListener("hashchange", expandTargetFromHash);
+    expandTargetFromHash(false);
+    window.addEventListener("hashchange", () => expandTargetFromHash(true));
+
+    // Preserve exact scroll position across refreshes even when URL has a #hash
+    const scrollKey = `scroll:${location.pathname}`;
+    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (navEntry?.type === "reload" && window.location.hash) {
+      const savedY = sessionStorage.getItem(scrollKey);
+      if (savedY !== null) {
+        const y = Number(savedY);
+        if (!Number.isNaN(y)) {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: y, behavior: "instant" });
+          });
+        }
+      }
+    }
+    window.addEventListener("pagehide", () => {
+      sessionStorage.setItem(scrollKey, String(window.scrollY));
+    });
   }
 
   function initCodeCopyButtons() {
