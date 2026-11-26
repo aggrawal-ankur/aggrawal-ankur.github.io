@@ -135,18 +135,20 @@ The VFS abstracts different filesystems into one unified interface. Basically, a
 
 Let's understand the virtual file system.
 
-## Virtual File System (VFS)
+# Virtual File System (VFS)
 
 The kernel defines a general filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to bring that abstraction into existence.
 
-I understand this abstraction as a "***contract***". If a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
+I understand this abstraction as a "***contract***", and if a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
 
-The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints are modeled into the contract. For example, take `read()`. This abstraction is designed to "***read a file***".
-  - Different storage hardware "read" data differently.
-  - The software that can communicate with this hardware needs to know what exactly on the hardware it needs to "read".
-  - A storage filesystem guides that component to the correct location on the hardware (among other things) where the data is stored.
+The contract is defined such that it doesn't alter a filesystem's implementation, only the entrypoints in that implementation are modeled into the contract.
+
+For example, take `read()`. This abstraction is designed to "***read a file***".
+  - Different storage hardware "read" data differently. Therefore, the driver that communicates with the hardware is different.
+  - But from the perspective of a storage filesystem, how a storage device is read/write doesn't matter. It only guides the driver that does the job of reading/writing. A layered abstraction, basically.
   - The storage filesystem provides this function that initiates the job of "reading a file" to the VFS and the VFS maps it to its generic `read()` abstraction.
   - When a process opens a file and calls `read()` on it, the VFS identifies the details and routes the request to the relevant filesystem handler, which calls the relevant hardware handler.
+  - We don't call different functions to read/write from/to an SSD, HDD, or a USB drive. The public API remains the same, only the internal functions vary.
 
 ---
 
@@ -155,22 +157,22 @@ Therefore, the VFS is best understood as a contract and the next step is to unde
 > 
 > *The details below are supposed to introduce you to the contract. They are explored in enough detail when the associated structures are introduced.*
 
-### Feature Set
+## Feature Set
 
-| Sr. | Feature Set | Brief Contract Details | Kernel Structures |
-| :-- | :---------- | :--------------------- | :---------------- |
-| 1 | **The Entity** | An identity for the resource. | `struct inode`,<br>`struct inode_operations` |
+| Sr. | Feature Set | Brief Contract Details | Associated Structures |
+| :-- | :---------- | :--------------------- | :-------------------- |
+| 1 | **The Entity** | An identity for the resource. | `struct inode` ,<br>`struct dentry` |
 | 2 | **Access Control** | Standard permission checks before the access is granted. | `struct inode` |
 | 3 | **The Session** | An active, stateful dialogue between a process and an entity. Multiple sessions can be opened for the same resource. | `struct file` |
-| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token, protecting the kernel address space. | `struct files_struct`,<br>`struct fdtable` |
-| 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers. | `struct file_operations`,<br>`struct dentry` |
+| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token, protecting the kernel address space. | `struct files_struct` |
+| 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers. | `struct file_operations` |
 | | | Deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. |
 
 > *If the description of an "entity" reads like "this is what a file is, isn't it?", I recommend you to hold it for a while. There is a reason I have used the term "entity", instead of "file".*
 
 ---
 
-### Trade-offs
+## Trade-offs
 
 "***Syscall & Indirection Latency***"
   - Accessing a resource through a file forces a privilege boundary switch into the kernel, followed by multi-pointer dereference chains (fd $\to$ files_struct $\to$ struct file $\to$ struct inode $\to$ file_operations).
@@ -192,36 +194,25 @@ Therefore, the VFS is best understood as a contract and the next step is to unde
   - Threads in a process share the exact same open file descriptions (`struct file`) rather than receiving separate copies.
   - Because mutable state like the `read`/`write` cursor (`f_pos`) is shared, concurrent I/O operations from multiple threads on the same descriptor must synchronize behind kernel locks (`f_pos_lock`), causing lock contention and serializing operations that callers might expect to run in parallel.
 
----
+# So, what is a file?
 
-We have unpacked a lot of things, so here is a short recap.
-  - There are different types of files in Linux.
-  - Different type of files means different filesystems are required. Moreover, there are different filesystems solving the same problem differently.
-  - The Linux kernel must support this variety of filesystems.
-  - The kernel provides a generic file system abstraction, called the VFS, which is a contract and anything that can be modeled into it could be managed as a "file". The implementation of the filesystem remains unaffected.
-
-So, what next? It's time to define files.
-
-## What is a File?
-
-A contract template by itself is just a set of rules. It only comes into reality when an agreement is made, right?
+A contract template by itself is just a set of rules. It only comes into reality when an agreement is made.
 
 "***If the virtual file system is the contract, a file is an active instance of that contract.***"
 
-As I have mentioned this already, a file to me was "text" or "binary". But from the perspective of the Linux kernel, it is more than that, and it is so for valid reasons.
+A file was basically "text" or "binary" to me. But how the kernel is supposed to implement this idea? A set of abstractions are required. That's why, from the perspective of the Linux kernel, a file is more than a "***bunch of bytes***".
 
-As humans, we can easily define a file as "***bytes of data on a hardware storage***". But how the kernel should implement it?
-  - A set of abstractions are required to manage these "***bytes***".
-  - That's why, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace.
+The text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and it is successful in that endeavour.
 
-It is clear that we need more than just the text to create a text file. We need "data" on the disk and some "metadata" that describes that "data" to facilitate operations on (or around) it.
+We need more than just the text to create a text file. Along with the "data" on the disk, we need some "metadata" that describes that "data" that facilitate "operations" on (or around) it.
 
 ---
 
-We have the storage hardware where the bytes reside. We have some machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs a file.***" We have seen this before, but where?"***The separation between an OS and the hardware.***"
-  - A combination of hardware provides raw capabilities.
-  - An OS taps into them and provides an interface to utilize them.
-  - Different OS tap on those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
+We have the storage hardware where the bytes reside, and a machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs a file.***"
+
+We have seen this before, but where? "***The separation between an OS and the hardware.***"
+  - A combination of hardware provides raw capabilities. An OS hooks into them and provides an interface to utilize them.
+  - Different OSs tap on those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
 
 Think about it. A text file stored on a physical storage device is backed by it. How about replacing the backing with something else?
   - Replace hardware storage with a table of names and pointers, and we get a directory file.
@@ -230,55 +221,52 @@ Think about it. A text file stored on a physical storage device is backed by it.
   - Replace hardware storage with a ring buffer in RAM, and we get a pipe.
   - Replace hardware storage with a network interface card (NIC), and we get a socket.
 
+---
+
 That's how we get those weird looking files.
 
----
+If a text talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
 
-If an article talks only about files that are "***bytes backed by a storage hardware***", it is discussing only regular files, which is a fraction of the virtual file system.
+It is clear that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the other types of files, let alone the VFS abstraction.
 
-It is clear that regular files provide a perfect starting point to understand VFS, but understanding regular files is not equal to understanding the VFS. They merely provide the right base to understand the rest of the files.
-
-The "***replace X with Y, and we get FILE_TYPE_Z***" simplification was possible only after we have understood "***regular files***".
+The VFS is huge, and these efforts merely provide the right base to understand the rest of the files, hence the VFS.
 
 ---
 
-So, what is a file? A file is an active instance of the VFS contract. The contract defines the properties and a file is a runtime instance of it.
+There is one last thing that needs to be explored, before we conclude "***what a file is?***"
 
-While the picture looks complete, there is one piece that is missing.
+## One File Opened at Multiple Sites
 
-## One Last Surprise
+So far, we have a resource that backs a file, some metadata about it and a driver that provides the operations applicable on that resource.
 
-A file can be opened at multiple places simultaneously. If you have not tried it, you can try right now.
+A file can be opened at multiple sites simultaneously. If you aren't aware of it, please try it out right now.
 
-Now think about it. We have one file and there are multiple active instances of it. Each instance has its own independent state. How the kernel makes that possible?
-
-So far, we have a resource that backs a file and some metadata about it. The third and the final component of a file is "***per-instance metadata***". This is what that allows a file to be opened at multiple places simultaneously.
+Each active instance has its own state. To make simultaneous access possible, the kernel needs to manage a per-instance metadata. That's the last component of a file.
 
 Therefore, a file in Linux is made up of 3 components.
-  1. The resource backing the file,
-  2. The metadata describing the resource, and
+  1. The resource backing the file.
+  2. The metadata describing the resource.
   3. The metadata associated with an open file description.
 
----
+## A Surprise
 
-Now what is surprising here?
+What could be surprising here? The terminology.
 
-  - In the Linux kernel's terminology, the metadata about the resource is called "***inode***", and the per-instance metadata is called "***file***". The term "***file***" means an instance of an "***inode***". Not the complete stack.
-  - But conceptually, per-instance metadata, inode and the resource backing them together makes a file.
+What we perceive as a "***file***" is the combination of per-instance metadata, resource metadata (inode and dentry) and the resource backing them.
+
+However, in the Linux kernel's terminology, the metadata about the resource is divided in two structures: "***inode***" and "***dentry***", and the per-instance metadata is called a "***file***".
 
 This terminology is why the feature set table uses the term "***entity***", not "***file***".
 
-> *In my understanding, the terminology is loose here. However, I am interested to know why it was chosen in the first place.*
-> 
-> *As I have mentioned earlier, it is possible that the author(s) perceived it differently, which led to this terminology.*
-
-"***Please remember this distinction and save yourself headaches later.***"
+I don't know why the terminology is like this, but I'd love to know.
 
 ---
 
-That's the core of the VFS. Everything else is a detail that we can choose to explore if we need it.
+"***In this text, we will use the term "file" to represent what we perceive as a file and `struct file` to represent the per-instance metadata.***"
 
-Now we will explore the details relevant to this pursuit.
+Let's explore the actual structures corresponding to these ideas.
+
+CONTINUE FROM HERE.
 
 # Kernel Structures
 
@@ -1293,8 +1281,6 @@ How about pointing to the core device struct instead? We need only one pointer, 
   - The device-specific structs embed this core struct in two different ways. Even if we take the union of pointers approach, storing both `struct device*` and `struct device**`, we need to know which one is active and behave accordingly.
 
 ---
-
-CONTINUE FROM HERE.
 
 Can you notice a similarity in all of these approaches (except that all of them failed)? They are trying to put a pointer to the device representation directly into the VFS inode. Is that the root of all problems?
 
