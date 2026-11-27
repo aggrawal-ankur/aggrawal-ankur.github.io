@@ -137,94 +137,72 @@ Let's understand the virtual file system.
 
 # Virtual File System (VFS)
 
-The kernel defines a generic filesystem abstraction. Among the many things it provides is a set of placeholders that represents an operation conceptually. The VFS expects a filesystem implementation to register its entrypoint functions into these placeholders. This keeps the name of the entrypoint fixed, while the underlying implementation depends on factors the userspace is not supposed to know about.
+The kernel defines a generic filesystem abstraction, called the ***Virtual Filesystem***.
+
+From the name alone, it seems like an abstraction designed to unify different filesystems into a single interface.
+
+The abstraction provides a lot of constructs to enable this unification, one of which is "function placeholders". A function placeholder represents an operation applicable on a file.
+
+The VFS expects a filesystem implementation to register its functions into these placeholders. This hides the underlying implementation from the userspace and keeps the name of the operation fixed.
 
 These placeholders are defined as function pointers with the following syntax.
 ```c
-return_type (*generic_op_name)(args);
+return_type (*operation)(args);
 ```
 
-There is a placeholder called `read` for an operation which is about "reading a file". It is defined as `type (*read)(...)`. Let's take it as an example to understand the design.
+For example, a file can be present on any storage hardware, managed by any storage filesystem, but we read it with the same `read()` function. It is possible because the function that initiates the job of "reading a file" is registered into the `(*read)(...)` placeholder by a storage filesystem implementation and it is invoked whenever `read` is called.
+```c
+// Conceptually ....
+read = &fs_specific_read;
+```
 
-  - Different types of storage hardware read data differently, so different hardware drivers exist to manage the physical communication.
-  - To read a file, the hardware driver needs some information, like which storage blocks to read. This information is managed by a storage filesystem.
-  - The storage filesystem defines a top-level function that does initiates the job of "reading a file". It invokes the relevant function in the hardware driver with this information.
-  - This function in the storage filesystem has the same signature as the placeholder and it registers this function with the VFS read placeholder, like `read = &fs_specific_read`.
-  - When a process opens a file and calls `read()`, the VFS simply invokes the function pointed to by `read`, which starts the process of reading a file.
+Without the VFS, the userspace has to figure out which hardware device and which storage filesystem it should interact with in order to read a particular file.
 
----
+With the VFS, we have shifted this search from the userspace to the kernel space. The userspace simply asks to do an operation and the kernel figures out how to perform it.
 
-Below is a summary of the above.
-  - We have storage hardware where the bytes reside.
-  - We have a hardware driver that knows how to communicate with the hardware.
-  - We have a storage filesystem driver that organizes the metadata about the data and uses the hardware driver to access the hardware.
-  - We have the VFS that provides a generic interface to a filesystem implementation. The userspace depends on the VFS to interact with the lower layers.
-
-Notice what the abstraction (VFS) has done here. "***It has created a standard accessibility layer.***"
-  - Instead of having functions like `read_ssd`, or `read_file_ext4`, we have a generic `read` function that takes a standard set of arguments, no matter who is implementing the "read" functionality.
-  - The userspace simply calls this generic `read` function without wondering about the underlying implementation.
-
-Without the VFS, the userspace has to figure out which hardware device and which storage filesystem it should interact with.
-
-We have only shifted the complexity from the userspace to the kernel space. The complexity is still there, just invisible to the userspace.
-
-This makes the userspace think that a text file is just "a bunch of bytes" on the disk. But the moment we transition to the kernel space, the process of "figuring out" the exact same things start.
-
-That's why, the "text in a text file" is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and we can consider it to be successful in this endeavour.
+Instead of functions like `read_ssd`, or `read_file_ext4`, we have a generic `read` function that takes a standard set of arguments and the userspace simply calls it without worrying about what implements it.
 
 ---
 
-The example above talks about "reading a file". But who defines what "reading a file" means?
+I have a few questions.
+  1. In case of storage devices, a "file" is effectively "a bunch of bytes" on the disk?
+  2. Storage devices generally operate on blocks. So if a file is "a bunch of bytes on the disk", "reading a file" is basically accessing a set of blocks on the storage device. That means, the storage device has decided what "reading a file" is?
 
-We consider a file as bytes on the disk, which makes "reading a file" accessing a set of blocks on the storage device.
+If the answer is yes, does that imply our current definition of files is dictated by storage devices? Obviously yes. What else do we consider a file, anyways!
 
-Is it possible to define the term "file" as any resource that has a set of operations which defines how it can be accessed and modified?
-  - That resource can exist however it wants, just provide a few entrypoints into it and register them with the VFS. You get a file.
-  - The VFS would be simply a contract that every resource has to agree upon if they want themselves to be considered a "file". That'd make the VFS truly generic, not just a storage filesystem organizer.
+The purpose of this derivation is to ask a very simple question. If the storage hardware defines "what a file" is and "what reading a file" is, when we interact with it. That means, a "file" is an abstract idea and something else decides its "specific" definition, like the storage hardware declares its files as "bytes on the disk". Then what is a file, as an abstract idea?
 
-That resource could be bytes on the disk, a capability in the processor, or a software construct that could be simply anything.
+---
+
+In case of text/binary files, we have bytes that reside on a storage device. We have certain drivers that implement operations on these bytes, like read/write. We can have multiple such files on a single storage device.
+
+  - If we consider the storage device a resource, then "bytes on the disk" is a specific entity of that resource.
+  - The resource defines standard operations on its entities, so each of them inherit the same set of operations.
+  - To make its entities accessible, the resource registers these entities with the Virtual Filesystem, including the operations applicable on them.
+  - The VFS maintains a record for these entities. When the userspace asks to do an operation on an entity, the VFS looks up the entity and invokes the function registered by the resource for that operation.
+
+From this perspective, we have a resource that defines one or more entities along with a set of operations to access and modify them. When a resource chooses to make them accessible from the userspace via the VFS abstraction, the entity's VFS representation is what a file is. When we open that VFS representation of the entity, we create a session with the entity.
+
+Let's apply this definition to the "weird" types of files, in Linux.
+  1. When the resource is a storage hardware, the entity is "a bunch of bytes on the disk", with operations, like `read`/`write`. This is a regular file.
+  2. When the resource is a filesystem's name-to-inode table, the entity is "a directory", with operations like listing entries (`getdents`), `lookup`, and `unlink`. This is a directory file.
+  3. When the resource is a stored target path string, the entity is "a symbolic link", with operations like `readlink` (resolving the target path).
+  4. When the resource is raw block-addressable hardware (like an SSD without a filesystem on top), the entity is "a block device", with operations like `read`/`write`, and `ioctl`.
+  5. When the resource is a non-block hardware device, a CPU silicon capability, or a kernel software construct, the entity is "a character device" (like `/dev/kvm` or `/dev/null`), with operations like `ioctl`, `mmap`, `read`/`write`.
+  6. When the resource is the network stack, the entity is "a socket", with operations, like `read`/`write`.
+  7. When the resource is a memory-mapped kernel data structure, like a ring buffer, the entity is "a pipe" (used in IPC), with operations, like `read`/`write`.
 
 That's how we got those weird looking files.
-  1. A regular file is bytes on the disk.
-  2. A soft link is a file that only points to another file.
-  3. A hard link is simply a reference count pointing to an entity.
-  4. Sockets are files representing the network stack.
-  5. Pipes are files representing IPC using certain data structures (a ring buffer).
-
-The moment we replace a file is "bytes on the disk" with "a resource with a set of operations", is the moment it will start to make sense.
-
-Now the VFS becomes a bridge between the userspace and the resource. The resource defines its terms of interactions, while adhering to the VFS contract. The userspace interacts with the resource through the VFS, and the VFS connects the userspace with the resource safely.
 
 ---
 
-What will opening a file imply? Creating a session with an entity.
+"***Therefore, the virtual filesystem is an accessibility layer connecting entities defined by different resources with the userspace via a unified interface.***"
 
-A file can be opened at multiple sites simultaneously, which means multiple sessions. If you aren't aware of it, please try it out right now.
+As with every abstraction, there are tradeoffs.
+  - **The "one-size-fits-all" overhead**. The VFS structures are generic, so naturally they include a large number of fields, many of which might not be relevant to all entities, but the penalty has to be paid to maintain this abstraction.
+  - **"Interface Mismatch"**. The VFS defines a set of function placeholders for file operations. But they are usually the ones that are common to all kinds of files. When a resource has to define operations that don't fit in these placeholders, it has to use an `ioctl`, which has its own disadvantages that are discussed later.
 
-To make this simultaneous access possible, the kernel has to manage metadata for each open session.
-
-This per-session metadata is represented by `struct file`.
-
-Therefore, what we perceive as a file has four components.
-  1. A resource (like a storage hardware).
-  2. An entity made from that resource (bytes on it).
-  3. Some metadata associated with that entity.
-  4. An open session with the entity.
-
-
-"***In this text, we will use the term "file" to represent what we perceive as a file and `struct file` to represent the per-instance metadata.***"
-
----
-
-That's the Virtual Filesystem.
-
-We have started our journey from regular files and now we know the basis of all these different types of files in Linux.
-
-It is evident that regular files are a great starting point into the VFS, but understanding them doesn't imply we understand all the different types, let alone the VFS itself.
-
-The VFS is huge, and these efforts merely provide the right base to understand the rest of the files, hence the VFS. We have also explored only those parts that are relevant to us.
-
-Anyways, it's time to explore the structures that implement these ideas.
+It's time to explore the structures that implement these ideas.
 
 # Kernel Structures
 
