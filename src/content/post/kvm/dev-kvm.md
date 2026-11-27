@@ -137,97 +137,67 @@ Let's understand the virtual file system.
 
 # Virtual File System (VFS)
 
-The kernel defines a generic filesystem abstraction. It comes with a "***feature set***" and the "***tradeoffs***" the kernel makes to make this abstraction possible.
+The kernel defines a generic filesystem abstraction. Among the many things it provides is a set of placeholders that represents an operation conceptually. The VFS expects a filesystem implementation to register its entrypoint functions into these placeholders. This keeps the name of the entrypoint fixed, while the underlying implementation depends on factors the userspace is not supposed to know about.
 
-I understand this abstraction as a "***contract***", and if a "thing" can be modeled into that contract, the kernel can manage it as a "***file***".
+These placeholders are defined as function pointers with the following syntax.
+```c
+return_type (*generic_op_name)(args);
+```
 
-The contract is defined such that it doesn't alter a filesystem's implementation; it only requires its implementation to register its entrypoints with the VFS interface. Take `read()`, for example.
+There is a placeholder called `read` for an operation which is about "reading a file". It is defined as `type (*read)(...)`. Let's take it as an example to understand the design.
 
-  - Every type of storage hardware reads data differently, so a hardware driver manages the physical communication.
-  - To read a file, the hardware driver needs to know which blocks on the storage device to read.
-  - A function in the storage filesystem's driver calls the hardware driver with this information.
-  - The storage filesystem registers this function that initiates the job of "reading a file" with the generic `read()` abstraction in the VFS.
-  - When a process opens a file and calls `read()`, the VFS simply calls the function in `read`, which invokes the hardware driver.
-
----
-
-Therefore, the VFS is best understood as a contract and the next step is to understand what this "contract" looks like.
-> *The details below are what I am able to identify. It is possible that the VFS is more than this, but I can write about it only when I understand it, and exploring any more detail is beyond the scope of this exploration.*
-> 
-> *The details below are supposed to introduce you to the contract. They are explored in enough detail when the associated structures are introduced.*
-
-## Feature Set
-
-| Sr. | Feature Set | Brief Contract Details | Associated Structures |
-| :-- | :---------- | :--------------------- | :-------------------- |
-| 1 | **The Entity** | An identity of the resource. | `struct inode` ,<br>`struct dentry` |
-| 2 | **Access Control** | Standard permission checks before access is granted. | `struct inode` |
-| 3 | **The Session** | An active, stateful dialogue between a process and an entity. Multiple sessions can be opened for the same resource. More on this later. | `struct file` |
-| 4 | **The Userspace Handle** | The userspace is provided an opaque, process-local integer token to safely access the session in the kernel space. | `struct files_struct` |
-| 5 | **Operations & Lifecycle** | A set of generic operations that are routed to implementation-specific handlers. | `struct file_operations` |
-| | | Deterministic resource and hardware cleanup upon explicit close or abrupt process crash when the final reference drops. |
-
-## Trade-offs
-
-"***Syscall & Indirection Latency***"
-  - Accessing a resource through a file forces a privilege boundary switch into the kernel, followed by multi-pointer dereference chains (fd $\to$ files_struct $\to$ struct file $\to$ struct inode $\to$ file_operations).
-  - This adds microsecond latency that makes the file abstraction unsuitable for atomic, nanosecond-level operations (like CPU locks or high-frequency timers).
-
-"***Kernel Memory Footprint***"
-  - Each open file is stateful and consumes non-pageable kernel RAM (struct file, fdtable slots, locks, position cursors).
-  - Managing hundreds of thousands of open descriptors imposes measurable memory overhead.
-
-"***Interface Mismatch***"
-  - The VFS operations fundamentally assumes a linear byte stream (read/write).
-  - Resources that don't fit a stream of bytes (like virtualization engines or hardware accelerators) are forced to rely heavily on `ioctl()`, losing compile-time type safety and standard error contracts in favor of arbitrary integer commands and raw memory pointers.
-
-"***Process-Local Confinement***"
-  - A file descriptor is strictly local to the process that opened it.
-  - It cannot be directly shared across address spaces through global pointers, and each process remains constrained by strict descriptor limits, requiring deliberate kernel mechanisms to scale or pass access.
-
-"***Concurrency & Lock Contention***"
-  - Threads in a process share the exact same open file descriptions (`struct file`) rather than receiving separate copies.
-  - Because mutable state like the `read`/`write` cursor (`f_pos`) is shared, concurrent I/O operations from multiple threads on the same descriptor must synchronize behind kernel locks (`f_pos_lock`), causing lock contention and serializing operations that callers might expect to run in parallel.
-
-# So, what is a file?
-
-A contract template by itself is just a set of rules. It only comes into reality when an agreement is made.
-
-"***If the virtual file system is the contract, a file is an active instance of that contract.***"
-
-A file was basically "text" or "binary" to me. But how the kernel is supposed to implement this idea? A set of abstractions are required. That's why, from the perspective of the Linux kernel, a file is more than a "***bunch of bytes***".
-
-Therefore, the text in a text file is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and it is successful in that endeavour.
-
-We need more than just the text to create a text file. Along with the "data" on the disk, we need some "metadata" that describes that "data" that facilitate "operations" on (or around) it.
+  - Different types of storage hardware read data differently, so different hardware drivers exist to manage the physical communication.
+  - To read a file, the hardware driver needs some information, like which storage blocks to read. This information is managed by a storage filesystem.
+  - The storage filesystem defines a top-level function that does initiates the job of "reading a file". It invokes the relevant function in the hardware driver with this information.
+  - This function in the storage filesystem has the same signature as the placeholder and it registers this function with the VFS read placeholder, like `read = &fs_specific_read`.
+  - When a process opens a file and calls `read()`, the VFS simply invokes the function pointed to by `read`, which starts the process of reading a file.
 
 ---
 
-We have the storage hardware where the bytes reside, and the machinery to facilitate operations around it. Notice what the abstraction has done here. "***It has separated the machinery required to manage a file from what backs it.***"
+Below is a summary of the above.
+  - We have storage hardware where the bytes reside.
+  - We have a hardware driver that knows how to communicate with the hardware.
+  - We have a storage filesystem driver that organizes the metadata about the data and uses the hardware driver to access the hardware.
+  - We have the VFS that provides a generic interface to a filesystem implementation. The userspace depends on the VFS to interact with the lower layers.
 
-Can you recall where we have seen this before? "***It is the separation between an OS and the hardware.***"
-  - A combination of hardware provides raw capabilities. An OS hooks into them and provides an interface to utilize them.
-  - Different OSes tap into those capabilities and provide access to the same hardware resources in different ways with different goals and trade-offs.
+Notice what the abstraction (VFS) has done here. "***It has created a standard accessibility layer.***"
+  - Instead of having functions like `read_ssd`, or `read_file_ext4`, we have a generic `read` function that takes a standard set of arguments, no matter who is implementing the "read" functionality.
+  - The userspace simply calls this generic `read` function without wondering about the underlying implementation.
 
-Think about it. A text file stored on a physical storage device is backed by it. How about replacing the backing with something else?
-  - Replace hardware storage with a table of names and inodes, and we get a directory file.
-  - Replace hardware storage with the KVM kernel module (which taps into the VMX capabilities of the hardware), and we get `/dev/kvm`.
-  - Replace hardware storage with a ring buffer in RAM, and we get a pipe.
-  - Replace hardware storage with the network stack, and we get a socket.
+Without the VFS, the userspace has to figure out which hardware device and which storage filesystem it should interact with.
 
-That's how we get those weird looking files.
+We have only shifted the complexity from the userspace to the kernel space. The complexity is still there, just invisible to the userspace.
+
+This makes the userspace think that a text file is just "a bunch of bytes" on the disk. But the moment we transition to the kernel space, the process of "figuring out" the exact same things start.
+
+That's why, the "text in a text file" is just one part of the story, and considering that the whole story is what the kernel wants the userspace to believe. The abstraction was designed to conceal details from the userspace, and we can consider it to be successful in this endeavour.
 
 ---
 
-Therefore, what we perceive as a file in Linux is made up of 2 things.
-  1. The resource backing the file.
-  2. The metadata describing the resource.
+The example above talks about "reading a file". But who defines what "reading a file" means?
 
-However, there is one last thing that needs to be explored.
+We consider a file as bytes on the disk, which makes "reading a file" accessing a set of blocks on the storage device.
 
-## Opening a File
+Is it possible to define the term "file" as any resource that has a set of operations which defines how it can be accessed and modified?
+  - That resource can exist however it wants, just provide a few entrypoints into it and register them with the VFS. You get a file.
+  - The VFS would be simply a contract that every resource has to agree upon if they want themselves to be considered a "file". That'd make the VFS truly generic, not just a storage filesystem organizer.
 
-Opening a file is about creating a session with it.
+That resource could be bytes on the disk, a capability in the processor, or a software construct that could be simply anything.
+
+That's how we got those weird looking files.
+  1. A regular file is bytes on the disk.
+  2. A soft link is a file that only points to another file.
+  3. A hard link is simply a reference count pointing to an entity.
+  4. Sockets are files representing the network stack.
+  5. Pipes are files representing IPC using certain data structures (a ring buffer).
+
+The moment we replace a file is "bytes on the disk" with "a resource with a set of operations", is the moment it will start to make sense.
+
+Now the VFS becomes a bridge between the userspace and the resource. The resource defines its terms of interactions, while adhering to the VFS contract. The userspace interacts with the resource through the VFS, and the VFS connects the userspace with the resource safely.
+
+---
+
+What will opening a file imply? Creating a session with an entity.
 
 A file can be opened at multiple sites simultaneously, which means multiple sessions. If you aren't aware of it, please try it out right now.
 
@@ -235,9 +205,12 @@ To make this simultaneous access possible, the kernel has to manage metadata for
 
 This per-session metadata is represented by `struct file`.
 
-As we have seen, what we perceive as a file is "***resource + metadata***". But, physically, the kernel has reserved the term "file" for the "per-session" metadata.
+Therefore, what we perceive as a file has four components.
+  1. A resource (like a storage hardware).
+  2. An entity made from that resource (bytes on it).
+  3. Some metadata associated with that entity.
+  4. An open session with the entity.
 
-I don't know why, but I'd love to know. I am sure we are missing something that is making it all sound strange.
 
 "***In this text, we will use the term "file" to represent what we perceive as a file and `struct file` to represent the per-instance metadata.***"
 
@@ -504,8 +477,6 @@ int dname_external(const struct dentry *dentry)
 ---
 
 ***Note: How dentries are constructed is a detail that is not relevant to this exploration, so it is skipped.***
-
-CONTINUE FROM HERE
 
 ## Why an inode lacks a filename?
 
