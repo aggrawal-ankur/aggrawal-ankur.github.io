@@ -1262,23 +1262,114 @@ const giscusThemes = import.meta.env.PROD
     expandTargetFromHash(false);
     window.addEventListener("hashchange", () => expandTargetFromHash(true));
 
-    // Preserve exact scroll position across refreshes even when URL has a #hash
-    const scrollKey = `scroll:${location.pathname}`;
+    // Preserve exact content position across refreshes (even when markdown above is edited or URL has a #hash)
+    const scrollKey = `scroll-anchor:${location.pathname}`;
     const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    if (navEntry?.type === "reload" && window.location.hash) {
-      const savedY = sessionStorage.getItem(scrollKey);
-      if (savedY !== null) {
-        const y = Number(savedY);
-        if (!Number.isNaN(y)) {
-          requestAnimationFrame(() => {
-            window.scrollTo({ top: y, behavior: "instant" });
-          });
+
+    function getTopVisibleBlock() {
+      if (!article) return null;
+      const blocks = article.querySelectorAll<HTMLElement>(
+        "p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, figure, hr, table"
+      );
+      for (const el of blocks) {
+        if (el.closest('.heading-content[data-collapsed="true"]')) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom > 24) return el;
+      }
+      return null;
+    }
+
+    function saveScrollAnchor() {
+      const el = getTopVisibleBlock();
+      if (!el || !article) {
+        sessionStorage.setItem(scrollKey, JSON.stringify({ y: window.scrollY }));
+        return;
+      }
+      const elRect = el.getBoundingClientRect();
+      const headings = Array.from(article.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id]"));
+      let prevH: HTMLElement | null = null;
+      let nextH: HTMLElement | null = null;
+      for (const h of headings) {
+        const pos = el.compareDocumentPosition(h);
+        if (pos & Node.DOCUMENT_POSITION_PRECEDING) {
+          prevH = h;
+        } else if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+          nextH = h;
+          break;
         }
       }
+      const data = {
+        y: window.scrollY,
+        id: el.id || "",
+        tag: el.tagName,
+        text: (el.textContent ?? "").trim().slice(0, 80),
+        offset: elRect.top,
+        prevHId: prevH?.id ?? "",
+        prevHOffset: prevH ? elRect.top - prevH.getBoundingClientRect().top : 0,
+        nextHId: nextH?.id ?? "",
+        nextHOffset: nextH ? elRect.top - nextH.getBoundingClientRect().top : 0,
+      };
+      sessionStorage.setItem(scrollKey, JSON.stringify(data));
     }
-    window.addEventListener("pagehide", () => {
-      sessionStorage.setItem(scrollKey, String(window.scrollY));
-    });
+
+    if (navEntry?.type === "reload") {
+      const raw = sessionStorage.getItem(scrollKey);
+      if (raw && article) {
+        try {
+          const anchor = JSON.parse(raw);
+          if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+          const applyAnchor = () => {
+            let targetEl: HTMLElement | null = anchor.id ? document.getElementById(anchor.id) : null;
+            if (!targetEl && anchor.text) {
+              const candidates = article.querySelectorAll<HTMLElement>(anchor.tag || "*");
+              for (const c of candidates) {
+                if ((c.textContent ?? "").trim().slice(0, 80) === anchor.text) {
+                  targetEl = c;
+                  break;
+                }
+              }
+            }
+            if (targetEl) {
+              const top = window.scrollY + targetEl.getBoundingClientRect().top - (anchor.offset ?? 0);
+              window.scrollTo({ top, behavior: "instant" });
+              return;
+            }
+            if (anchor.nextHId) {
+              const nh = document.getElementById(anchor.nextHId);
+              if (nh) {
+                const top = window.scrollY + nh.getBoundingClientRect().top + (anchor.nextHOffset ?? 0) - (anchor.offset ?? 0);
+                window.scrollTo({ top, behavior: "instant" });
+                return;
+              }
+            }
+            if (anchor.prevHId) {
+              const ph = document.getElementById(anchor.prevHId);
+              if (ph) {
+                const top = window.scrollY + ph.getBoundingClientRect().top + (anchor.prevHOffset ?? 0) - (anchor.offset ?? 0);
+                window.scrollTo({ top, behavior: "instant" });
+                return;
+              }
+            }
+            if (typeof anchor.y === "number") {
+              window.scrollTo({ top: anchor.y, behavior: "instant" });
+            }
+          };
+
+          let userScrolled = false;
+          const markScrolled = () => { userScrolled = true; };
+          window.addEventListener("wheel", markScrolled, { once: true, passive: true });
+          window.addEventListener("touchstart", markScrolled, { once: true, passive: true });
+
+          requestAnimationFrame(applyAnchor);
+          document.fonts?.ready.then(() => {
+            if (!userScrolled) applyAnchor();
+          });
+        } catch {}
+      }
+    }
+
+    window.addEventListener("pagehide", saveScrollAnchor);
   }
 
   function initCodeCopyButtons() {
