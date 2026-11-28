@@ -179,21 +179,49 @@ Then what is a file, as an abstract idea?
 
 In case of text/binary files, we have bytes that reside on a storage device. We have certain drivers that implement operations on these bytes, like read/write. We can have multiple such files on a single storage device.
 
-  - If we consider the storage device a resource, then "bytes on the disk" is a specific entity of that resource.
+  - If we consider the storage device a resource, then "bytes on the disk" is a particular entity of that resource.
   - The resource defines a set of operations on its entities.
   - To make its entities accessible from the userspace, the resource's software implementation registers these entities with the Virtual Filesystem, including the operations applicable on them. The VFS maintains an organized record of all the registered entities.
   - When the userspace requests an operation on an entity, the VFS looks up the entity's VFS record and invokes the function registered by the resource for that operation.
 
 ---
 
-From this perspective, we have a resource that defines one or more classes of entities, each with a set of operations to access and modify them.
+Right now, we are assuming that the storage device has only one kind of entity, i.e. "a bunch of bytes on the disk". However, it is not limited to it.
+  - A storage device carries a lot of attributes, each of which requires attention to make the storage device function in the intended way.
+  - Take "power management", for example. A storage device can't operate without power. But does the userspace have any business with this attribute? No.
 
-When a resource chooses to make them accessible from the userspace via the VFS abstraction, the entity's VFS representation is what a file is.
+A complex resource could have a large variety of attributes. Many of these attributes could be about critical components that the userspace has no business with. If the resource is allowed to define only one kind of entities, it is effectively making the entire resource accessible to the userspace.
 
-When we open that VFS representation of the entity, we create a session with the entity.
+That's the weak point in our model. The resource must be allowed to create multiple kinds of entities that map to different attributes of the resource. Each kind has a set of operations that are applicable to its entities. This allows a resource to make only the selected features available to the userspace.
 
-Let's apply this definition to the "weird" types of files, in Linux.
-> *Please note that it includes details which aren't explored yet, but will be soon.*
+Now the model becomes:
+```
+                                   Resource
+                     __________________/|\___________________
+                     |                  |                   |
+Types                T1                T2                  T3
+                  ___||____         ___||____           ___||____
+                 /  |   |  \       /  |   |  \         /  |   |  \
+                |   |   |   |     |   |   |   |       |   |   |   |
+Entities        e1  e2  e3  e4    e1  e2  e3  e4      e1  e2  e3  e4
+                |   |                 |   |
+VFS Record      v1  v2                v3  v4
+```
+
+The entities that have a VFS record are by choice made available to the userspace, while the entities that don't have a VFS record are by choice retained for the kernel alone.
+
+---
+
+From this perspective, we have a resource that defines one or more types of entities, each with a set of operations to access and modify them.
+
+When a resource makes a type of entities accessible from the userspace, through the VFS, the entity's representation in the VFS is what a file is.
+
+To open a file, we create a session with the entity's VFS representation.
+
+---
+
+Let's apply this definition to the file types listed in the aforementioned table.
+> *Please note that it includes details which aren't explored yet. Don't worry about them.*
 
   1. When the resource is a storage hardware, the entity is "a bunch of bytes on the disk", with operations, like `read`/`write`.
   2. When the resource is a filesystem's "name-to-inode" table, the entity is "a directory", with operations `getdents`, `lookup`, and `unlink`.
@@ -205,11 +233,18 @@ Let's apply this definition to the "weird" types of files, in Linux.
 
 In all the cases, the file is the VFS record of the entity.
 
-That's how we got those weird looking files.
-
 ---
 
-"***Therefore, the virtual filesystem is an accessibility layer connecting entities defined by different resources with the userspace via a unified interface. The VFS record representing these entities is what a file is.***"
+***Therefore, the virtual filesystem is an accessibility layer connecting entities defined by different resources with the userspace via a unified interface. The VFS record representing these entities is what a file is.***
+
+That's the crux of "types of files" in Linux.
+
+To summarize, what we perceive as a file has 3 components.
+  1. A resource,
+  2. an entity of this resource, and
+  3. a VFS record of this entity.
+
+---
 
 As with every abstraction, there are tradeoffs.
   - **The "one-size-fits-all" overhead**. The constructs in the VFS are generic, so they naturally include a large number of fields, many of which might not be relevant to all entities. But the penalty has to be paid.
